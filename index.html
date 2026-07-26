@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>The Cup · Myrtle Beach 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --ink:#0E2A24;          /* clubhouse dark */
+  --ink2:#123a31;
+  --paper:#F5EFE1;        /* scorecard cream */
+  --paper2:#ECE3CF;
+  --line:#d8cdb0;
+  --text:#1A2B26;
+  --text-dim:#5c6b62;
+  --light:#EDE7D6;
+  --gold:#E5A823;
+  --blue:#1E5FA8;
+  --green:#2E7D53;
+  --red:#C0472B;
+  --shadow:0 6px 20px rgba(0,0,0,.18);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{
+  font-family:'Inter',system-ui,sans-serif;
+  background:var(--ink);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  padding-bottom:calc(72px + env(safe-area-inset-bottom));
+}
+h1,h2,h3,.disp{font-family:'Oswald',sans-serif;letter-spacing:.01em;margin:0}
+.mono{font-family:'Roboto Mono',monospace;font-variant-numeric:tabular-nums}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input,select{font-family:inherit;font-size:16px}
+.hidden{display:none !important}
+
+/* ---- App header ---- */
+.topbar{
+  position:sticky;top:0;z-index:20;
+  background:var(--ink);
+  color:var(--light);
+  padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
+  display:flex;align-items:center;justify-content:space-between;
+  border-bottom:1px solid rgba(255,255,255,.08);
+}
+.brand{display:flex;align-items:center;gap:10px}
+.brand .flag{font-size:20px}
+.brand h1{font-size:19px;font-weight:700;text-transform:uppercase;line-height:1}
+.brand small{display:block;font-family:'Inter';font-weight:500;font-size:10px;letter-spacing:.14em;color:var(--gold);text-transform:uppercase;margin-top:3px}
+.me-chip{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.08);padding:5px 9px 5px 6px;border-radius:999px;font-size:12px;font-weight:600;color:var(--light)}
+.me-chip .av{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:15px;background:var(--paper)}
+
+/* ---- Layout ---- */
+.screen{max-width:640px;margin:0 auto;padding:16px 14px 24px;min-height:60vh}
+.view{animation:fade .25s ease}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.eyebrow{font-family:'Oswald';text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:var(--gold);font-weight:600;margin-bottom:8px}
+.card{background:var(--paper);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-bottom:14px;position:relative;overflow:hidden}
+.card.tight{padding:12px}
+.muted{color:var(--text-dim);font-size:13px;line-height:1.5}
+.pill{display:inline-block;font-family:'Oswald';font-size:11px;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:999px;font-weight:600}
+
+/* ---- Tug of war meter (signature) ---- */
+.cup{background:var(--ink2);border-radius:16px;padding:18px 16px 16px;color:var(--light);box-shadow:var(--shadow);margin-bottom:16px}
+.cup-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px}
+.cup-team{display:flex;flex-direction:column;gap:2px}
+.cup-team.right{align-items:flex-end;text-align:right}
+.cup-team .nm{font-family:'Oswald';font-weight:600;text-transform:uppercase;font-size:14px;letter-spacing:.03em}
+.cup-team .pts{font-family:'Oswald';font-weight:700;font-size:40px;line-height:.9}
+.cup-team .sub{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(237,231,214,.55)}
+.meter{height:16px;border-radius:999px;background:rgba(255,255,255,.12);position:relative;overflow:hidden;display:flex}
+.meter .fillL,.meter .fillR{height:100%;transition:width .6s cubic-bezier(.2,.7,.3,1)}
+.meter .mid{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:rgba(255,255,255,.6);transform:translateX(-1px)}
+.cup-foot{text-align:center;font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-top:11px;color:rgba(237,231,214,.6)}
+
+/* ---- Leaderboard rows ---- */
+.lb-round-tab{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;padding-bottom:2px}
+.lb-round-tab button{white-space:nowrap;background:rgba(255,255,255,.06);color:var(--light);border:1px solid rgba(255,255,255,.1);padding:8px 13px;border-radius:999px;font-size:12px;font-weight:600}
+.lb-round-tab button.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
+.row{display:flex;align-items:center;gap:11px;padding:10px 4px;border-bottom:1px solid var(--line)}
+.row:last-child{border-bottom:none}
+.row .av{width:34px;height:34px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:19px;flex:none;border:2px solid transparent}
+.row .nm{flex:1;min-width:0}
+.row .nm b{font-weight:600;font-size:15px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .nm span{font-size:11px;color:var(--text-dim)}
+.row .sc{font-family:'Oswald';font-weight:700;font-size:22px;min-width:44px;text-align:right}
+.row .rel{font-family:'Roboto Mono';font-weight:700;font-size:13px;min-width:38px;text-align:right}
+.rel.under{color:var(--green)}.rel.over{color:var(--red)}.rel.even{color:var(--text-dim)}
+.teamdot{width:8px;height:8px;border-radius:50%;flex:none}
+
+/* ---- Scorecard entry ---- */
+.side-tabs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
+.side-tabs button{display:flex;align-items:center;gap:6px;background:var(--paper);border:1px solid var(--line);padding:7px 11px 7px 7px;border-radius:999px;font-size:13px;font-weight:600;color:var(--text)}
+.side-tabs button .av{width:24px;height:24px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:14px}
+.side-tabs button.on{background:var(--ink);color:var(--light);border-color:var(--ink)}
+.holepick{display:grid;grid-template-columns:repeat(9,1fr);gap:5px;margin-bottom:14px}
+.holepick button{aspect-ratio:1;border-radius:8px;background:var(--paper2);font-family:'Oswald';font-weight:600;font-size:14px;color:var(--text);border:1px solid transparent;position:relative}
+.holepick button.done{background:#dfe6dc}
+.holepick button.on{background:var(--ink);color:var(--light)}
+.holepick button .dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--green)}
+.stepper{display:flex;align-items:center;justify-content:center;gap:18px;margin:8px 0 16px}
+.stepper .val{font-family:'Oswald';font-weight:700;font-size:64px;line-height:1;min-width:96px;text-align:center}
+.stepper .val small{display:block;font-family:'Inter';font-weight:600;font-size:12px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase}
+.stepper button.pm{width:60px;height:60px;border-radius:50%;background:var(--ink);color:var(--light);font-size:30px;font-weight:600;display:grid;place-items:center}
+.stepper button.pm:active{transform:scale(.94)}
+.quickrow{display:flex;gap:8px;margin-bottom:6px}
+.quickrow button{flex:1;padding:11px;border-radius:10px;background:var(--paper2);font-weight:600;font-size:13px;border:1px solid var(--line)}
+.entered-by{text-align:center;font-size:11px;color:var(--text-dim);margin-top:10px}
+
+/* ---- Generic buttons/forms ---- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--ink);color:var(--light);padding:13px 18px;border-radius:11px;font-weight:600;font-size:15px;width:100%}
+.btn.gold{background:var(--gold);color:var(--ink)}
+.btn.ghost{background:transparent;border:1px solid var(--line);color:var(--text)}
+.btn.sm{padding:8px 12px;font-size:13px;width:auto;border-radius:9px}
+.btn:active{transform:scale(.98)}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--text-dim);margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.field input,.field select{width:100%;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--text)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* ---- Bottom nav ---- */
+.nav{position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--ink);border-top:1px solid rgba(255,255,255,.08);display:flex;padding:8px 6px calc(8px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
+.nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:rgba(237,231,214,.5);font-size:10px;font-weight:600;letter-spacing:.03em;padding:4px 0}
+.nav button svg{width:22px;height:22px}
+.nav button.on{color:var(--gold)}
+
+/* ---- Modal ---- */
+.scrim{position:fixed;inset:0;z-index:50;background:rgba(8,20,17,.72);display:grid;place-items:center;padding:18px;animation:fade .2s}
+.modal{background:var(--paper);border-radius:18px;width:100%;max-width:460px;max-height:88vh;overflow:auto;box-shadow:var(--shadow)}
+.modal-h{padding:18px 18px 6px}
+.modal-h h2{font-size:22px;text-transform:uppercase;font-weight:700}
+.modal-b{padding:6px 18px 18px}
+.gallery{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin:6px 0 4px}
+.gallery button{aspect-ratio:1;border-radius:12px;background:var(--paper2);font-size:24px;display:grid;place-items:center;border:2px solid transparent}
+.gallery button.on{border-color:var(--ink);background:#fff}
+.gallery button:disabled{opacity:.28;cursor:not-allowed}
+.namelist{display:grid;gap:7px;margin:4px 0}
+.namelist button{display:flex;align-items:center;gap:9px;padding:11px;border-radius:10px;background:#fff;border:1px solid var(--line);text-align:left;font-weight:600}
+.namelist button .teamdot{width:9px;height:9px}
+.roster-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.roster-item .av{width:30px;height:30px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:17px}
+.roster-item .info{flex:1;min-width:0}
+.roster-item .info b{font-size:14px}
+.roster-item .info span{font-size:11px;color:var(--text-dim);display:block}
+.tag{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--ink);color:var(--light)}
+.empty{text-align:center;padding:28px 16px;color:var(--text-dim)}
+.empty .big{font-size:34px;margin-bottom:8px}
+.banner{background:rgba(229,168,35,.14);border:1px solid rgba(229,168,35,.4);color:#7a5a10;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:14px}
+.status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
+.divider{height:1px;background:var(--line);margin:14px 0}
+.fmt-blurb{font-size:12px;color:var(--text-dim);line-height:1.5;margin-top:6px}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">
+    <span class="flag">⛳</span>
+    <div>
+      <h1 id="tripTitle">The Cup</h1>
+      <small id="tripSub">Myrtle Beach · Oct 22–25</small>
+    </div>
+  </div>
+  <button class="me-chip" id="meChip" onclick="openIdentity()">
+    <span class="av" id="meAv">＋</span><span id="meName">Sign in</span>
+  </button>
+</div>
+
+<div class="screen" id="screen"></div>
+
+<nav class="nav" id="nav"></nav>
+
+<div id="modalHost"></div>
+
+<script>
+/* ============================================================
+   The Cup — Myrtle Beach 2026
+   Shared store: Netlify Blobs (via /api/store) with a
+   localStorage / in-memory fallback so it runs before deploy.
+   ============================================================ */
+
+/* ---------- Shared store ---------- */
+const Store = (() => {
+  const API = '/api/store';
+  const NS = 'mbg:';
+  const mem = new Map();
+  let online = null; // null=unknown, true/false once probed
+
+  const lsGet = (k) => { try { const v = localStorage.getItem(NS+k); return v==null?null:JSON.parse(v); } catch(e){ return mem.has(k)?mem.get(k):null; } };
+  const lsSet = (k,v) => { try { localStorage.setItem(NS+k, JSON.stringify(v)); } catch(e){ mem.set(k,v); } };
+  const lsList = (p) => {
+    const out={};
+    try { for(let i=0;i<localStorage.length;i++){ const key=localStorage.key(i); if(key.startsWith(NS+p)) out[key.slice(NS.length)]=JSON.parse(localStorage.getItem(key)); } }
+    catch(e){ for(const [k,v] of mem){ if(k.startsWith(p)) out[k]=v; } }
+    return out;
+  };
+
+  return {
+    get online(){ return online===true; },
+    async get(key){
+      if(online!==false){ try{ const r=await fetch(`${API}?action=get&key=${encodeURIComponent(key)}`); const j=await r.json(); online=true; return j.data ?? null; }catch(e){ online=false; } }
+      return lsGet(key);
+    },
+    async set(key,value){
+      if(online!==false){ try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'set',key,value})}); await r.json(); online=true; return; }catch(e){ online=false; } }
+      lsSet(key,value);
+    },
+    async del(key){
+      if(online!==false){ try{ await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'del',key})}); online=true; return; }catch(e){ online=false; } }
+      const full=NS+key; try{ localStorage.removeItem(full); }catch(e){ mem.delete(key); }
+    },
+    async list(prefix){
+      if(online!==false){ try{ const r=await fetch(`${API}?action=list&prefix=${encodeURIComponent(prefix)}`); const j=await r.json(); online=true; return j.data||{}; }catch(e){ online=false; } }
+      return lsList(prefix);
+    }
+  };
+})();
+
+/* device-only memory (who am I on this phone) */
+const Device = {
+  get(k){ try{ const v=localStorage.getItem('mbg-dev:'+k); return v==null?null:JSON.parse(v);}catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem('mbg-dev:'+k, JSON.stringify(v)); }catch(e){} },
+};
+
+/* ---------- Formats ---------- */
+const FORMATS = {
+  singles:   { label:'Singles',      side:'player', blurb:'Every player plays their own ball. Head-to-head match play, one point per match.' },
+  betterball:{ label:'Better Ball',  side:'player', blurb:'Partners each play their own ball; the team counts the lower net score on each hole.' },
+  shramble:  { label:'Shramble',     side:'player', blurb:'Team plays the best drive, then everyone plays their own ball in from there.' },
+  scramble:  { label:'Scramble',     side:'group',  blurb:'Team plays one ball — best shot every time. One score per group, per hole.' },
+};
+
+const AVATARS = ['⛳','🏌️','🏆','🎯','🦅','🐦','🍺','🥃','🚌','🕶️','🧢','🐐','🦈','🐊','🐅','🐯','🦍','🦏','🐺','🦁','🎩','👑','🃏','🎣','🐷','🦌','🍔','🌭','🏴‍☠️','⚡','🔥','💣','🎸','🎲','🚀','🛥️','🌊','🏖️','☕','🥩'];
+
+/* ---------- State ---------- */
+const TRIP_ROSTER = [
+  'Eric Noto','Andrew Smith','John Schmeer','Chris Hillis','Devin Velnoskey',
+  'Andrew Eby','Jordan Corbin','Julian Maskeroni','Brett Mastropieri','Patrick Budd',
+  'Justin McGrath','Pat Greenwell','Nick Hammond','Bob Mayo','Joe Fucigna','Guest 16 (TBD)'
+];
+const DEFAULT_CONFIG = () => ({
+  settings:{
+    tripName:'The Cup', tripSub:'True Blue Resort · Oct 22–25', adminPin:'0605', holeCount:18,
+    resort:'True Blue Resort, Pawleys Island, SC',
+    checkIn:'Check in at Litchfield Beach & Golf Resort · 14276 Ocean Highway, Pawleys Island, SC 29585',
+    bookingRef:'US58057',
+  },
+  teams:[ {id:'t1',name:'Team Gold',color:'#E5A823'}, {id:'t2',name:'Team Blue',color:'#1E5FA8'} ],
+  players: TRIP_ROSTER.map((name,i)=>({ id:'p'+i, name, hcp:null, teamId:'', isCaptain:false, avatar:'' })),
+  courses:[
+    {id:'c1', name:'True Blue Golf Club', address:'900 Blue Stem Dr, Pawleys Island, SC 29585', tees:'Gold', par:72,
+     pars:[5,4,3,5,4,4,3,4,5,5,3,4,4,3,5,3,4,4], si:[1,11,15,5,13,9,17,7,3,8,18,10,14,16,4,12,2,6]},
+    {id:'c2', name:'Pawleys Plantation Golf & Country Club', address:'70 Tanglewood Dr, Pawleys Island, SC 29585', tees:'Golden Bear', par:72,
+     pars:[5,4,3,5,4,4,3,4,4,4,5,4,3,5,4,4,3,4], si:[15,1,11,13,5,7,17,3,9,10,6,18,12,14,8,2,16,4]},
+    {id:'c3', name:'Caledonia Golf & Fish Club', address:'369 Caledonia Dr, Pawleys Island, SC 29585', tees:'Pintail', par:70,
+     pars:[4,5,3,4,4,3,4,5,3,5,3,4,4,4,4,4,3,4], si:[12,8,14,6,2,16,4,10,18,15,13,9,5,7,3,1,17,11]},
+  ],
+  rounds:[
+    {id:'r1', dateLabel:'Thu · Oct 22', teeTime:'1:06 PM', name:'Round 1', format:'', courseId:'c1', groups:[]},
+    {id:'r2', dateLabel:'Fri · Oct 23', teeTime:'9:12 AM', name:'Round 2', format:'', courseId:'c2', groups:[]},
+    {id:'r3', dateLabel:'Sat · Oct 24', teeTime:'8:24 AM', name:'Round 3', format:'', courseId:'c3', groups:[]},
+  ],
+});
+
+function reconcileTrip(){
+  // Heal a config that was seeded by an earlier version: backfill courses,
+  // round→course links, tee times and roster WITHOUT touching user edits
+  // (teams, handicaps, captains, formats, groups, avatars, scores).
+  const def=DEFAULT_CONFIG();
+  const cfg=State.config;
+  let changed=false;
+  cfg.settings=cfg.settings||{};
+  ['resort','checkIn','bookingRef','tripSub','tripName'].forEach(k=>{
+    if(!cfg.settings[k] && def.settings[k]){ cfg.settings[k]=def.settings[k]; changed=true; }
+  });
+  cfg.courses=cfg.courses||[];
+  def.courses.forEach(dc=>{
+    let c=cfg.courses.find(x=>x.id===dc.id);
+    if(!c){ cfg.courses.push(JSON.parse(JSON.stringify(dc))); changed=true; return; }
+    const stale=!c.pars || c.pars.length!==18 || c.pars.every(p=>p===4) || !c.si;
+    if(stale){ c.pars=dc.pars.slice(); c.si=dc.si.slice(); c.par=dc.par; c.tees=dc.tees; changed=true; }
+    if(!c.address){ c.address=dc.address; changed=true; }
+  });
+  cfg.rounds=cfg.rounds||[];
+  def.rounds.forEach(dr=>{
+    let r=cfg.rounds.find(x=>x.id===dr.id);
+    if(!r){ cfg.rounds.push(JSON.parse(JSON.stringify(dr))); changed=true; return; }
+    if(!r.courseId){ r.courseId=dr.courseId; changed=true; }
+    if(!r.teeTime){ r.teeTime=dr.teeTime; changed=true; }
+    if(!r.dateLabel){ r.dateLabel=dr.dateLabel; changed=true; }
+    if(!r.name){ r.name=dr.name; changed=true; }
+  });
+  if(!cfg.players || !cfg.players.length){ cfg.players=def.players; changed=true; }
+  return changed;
+}
+
+const State = {
+  config:null,
+  avatars:{},   // playerId -> emoji  (from avatar:* blobs)
+  cards:{},     // 'card:round:side' -> {holes,enteredBy,updatedAt}
+  me:null,      // playerId
+  view:'board',
+  activeRound:null,
+  entrySide:null,
+  entryHole:1,
+  adminAuthed:false,
+};
+
+/* ---------- Helpers ---------- */
+const $ = (sel,root=document)=>root.querySelector(sel);
+const el = (html)=>{ const t=document.createElement('template'); t.innerHTML=html.trim(); return t.content.firstChild; };
+const esc = (s)=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const player = (id)=> (State.config?.players||[]).find(p=>p.id===id);
+const team = (id)=> (State.config?.teams||[]).find(t=>t.id===id);
+const course = (id)=> (State.config?.courses||[]).find(c=>c.id===id);
+const avatarOf = (id)=> State.avatars[id] || player(id)?.avatar || '🏌️';
+const holeCount = ()=> State.config?.settings?.holeCount || 18;
+const isCaptain = (pid)=> !!player(pid)?.isCaptain;
+const teammates = (pid)=>{ const p=player(pid); return (State.config?.players||[]).filter(x=>x.teamId===p?.teamId); };
+
+function parsFor(roundId){
+  const r=(State.config.rounds||[]).find(x=>x.id===roundId);
+  const c=course(r?.courseId);
+  const n=holeCount();
+  if(c?.pars?.length===n) return c.pars;
+  return Array.from({length:n},()=>4); // default par 4 until course info arrives
+}
+function cardKey(roundId,sideId){ return `card:${roundId}:${sideId}`; }
+function grossTotal(card){ if(!card?.holes) return null; const v=Object.values(card.holes).filter(x=>x!=null); return v.length?v.reduce((a,b)=>a+b,0):null; }
+function holesPlayed(card){ return card?.holes ? Object.values(card.holes).filter(x=>x!=null).length : 0; }
+function netTotal(sideId, card, isGroup){
+  const g=grossTotal(card); if(g==null) return null;
+  if(isGroup) return g; // group handicap handling deferred
+  const hcp=player(sideId)?.hcp; return (hcp!=null && hcp!=='') ? g - Number(hcp) : g;
+}
+
+/* which sides exist for a round */
+function sidesForRound(round){
+  if(!round) return [];
+  const fmt=FORMATS[round.format];
+  if(fmt?.side==='group'){
+    if(round.groups?.length) return round.groups.map((g,i)=>({id:`g${i}`, kind:'group', members:g, teamId:groupTeam(g)}));
+    // fallback: one card per team
+    return (State.config.teams||[]).map(t=>({id:t.id, kind:'group', members:(State.config.players||[]).filter(p=>p.teamId===t.id).map(p=>p.id), teamId:t.id}));
+  }
+  return (State.config.players||[]).map(p=>({id:p.id, kind:'player', teamId:p.teamId}));
+}
+function groupTeam(memberIds){
+  const counts={};
+  memberIds.forEach(id=>{ const t=player(id)?.teamId; if(t) counts[t]=(counts[t]||0)+1; });
+  return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0] || null;
+}
+function sideLabel(side){
+  if(side.kind==='player') return player(side.id)?.name || '—';
+  const names=(side.members||[]).map(id=>player(id)?.name?.split(' ')[0]).filter(Boolean);
+  return names.length?names.join(' + '):'Group';
+}
+function sideAvatar(side){ return side.kind==='player'? avatarOf(side.id) : '⛳'; }
+
+/* who can THIS device enter for, in a round */
+function editableSides(round){
+  const sides=sidesForRound(round);
+  if(!State.me) return [];
+  const meId=State.me, cap=isCaptain(meId), myTeam=player(meId)?.teamId;
+  if(FORMATS[round.format]?.side==='group'){
+    return sides.filter(s => cap ? s.teamId===myTeam : (s.members||[]).includes(meId));
+  }
+  // individual formats: me + partners in my group + (captain) whole team
+  const myGroup=(round.groups||[]).find(g=>g.includes(meId)) || [];
+  return sides.filter(s => s.id===meId || myGroup.includes(s.id) || (cap && player(s.id)?.teamId===myTeam));
+}
+
+/* ---------- Team standings (PROVISIONAL) ----------
+   v1 rule: in each round, the team with the lower net aggregate
+   wins the round (1 pt; tie = ½ each). This is a placeholder for
+   the real match-play engine once formats/rules are locked. */
+function roundTeamNet(round){
+  const out={}; (State.config.teams||[]).forEach(t=>out[t.id]={net:0,played:false});
+  const sides=sidesForRound(round);
+  const isGroup=FORMATS[round.format]?.side==='group';
+  sides.forEach(s=>{
+    const card=State.cards[cardKey(round.id,s.id)];
+    const n=netTotal(s.id,card,isGroup);
+    if(n!=null && s.teamId && out[s.teamId]){ out[s.teamId].net+=n; out[s.teamId].played=true; }
+  });
+  return out;
+}
+function tripPoints(){
+  const pts={}; (State.config.teams||[]).forEach(t=>pts[t.id]=0);
+  (State.config.rounds||[]).forEach(r=>{
+    if(!r.format) return;
+    const tn=roundTeamNet(r);
+    const played=Object.values(tn).some(x=>x.played);
+    if(!played) return;
+    const entries=Object.entries(tn).filter(([,v])=>v.played);
+    if(entries.length<2) return;
+    entries.sort((a,b)=>a[1].net-b[1].net);
+    if(entries[0][1].net===entries[1][1].net){ entries.forEach(([id])=>pts[id]+=0.5); }
+    else pts[entries[0][0]]+=1;
+  });
+  return pts;
+}
+
+/* ============================================================
+   LOAD + POLL
+   ============================================================ */
+async function loadAll(){
+  let cfg=await Store.get('config');
+  if(!cfg){ cfg=DEFAULT_CONFIG(); await Store.set('config',cfg); }
+  State.config=cfg;
+  if(reconcileTrip()){ await Store.set('config',State.config); }
+  State.avatars={};
+  const avs=await Store.list('avatar:');
+  Object.entries(avs).forEach(([k,v])=>{ State.avatars[k.split(':')[1]]=v?.emoji; });
+  State.cards=await Store.list('card:');
+  State.me=Device.get('me');
+  if(!State.activeRound) State.activeRound=(cfg.rounds.find(r=>r.format)||cfg.rounds[0])?.id;
+  document.getElementById('tripTitle').textContent=cfg.settings.tripName||'The Cup';
+  document.getElementById('tripSub').textContent=cfg.settings.tripSub||'';
+}
+async function refresh(){
+  try{
+    const avs=await Store.list('avatar:');
+    State.avatars={}; Object.entries(avs).forEach(([k,v])=>{ State.avatars[k.split(':')[1]]=v?.emoji; });
+    State.cards=await Store.list('card:');
+    const cfg=await Store.get('config'); if(cfg) State.config=cfg;
+    render();
+  }catch(e){}
+}
+let pollTimer=null;
+function startPoll(){ clearInterval(pollTimer); pollTimer=setInterval(refresh, 5000); }
+
+/* ============================================================
+   IDENTITY
+   ============================================================ */
+function updateMeChip(){
+  const av=$('#meAv'), nm=$('#meName');
+  if(State.me && player(State.me)){ av.textContent=avatarOf(State.me); nm.textContent=player(State.me).name.split(' ')[0]; }
+  else { av.textContent='＋'; nm.textContent='Sign in'; }
+}
+function openIdentity(){
+  const players=State.config.players||[];
+  if(!players.length){
+    showModal(`<div class="modal-h"><h2>No roster yet</h2></div>
+      <div class="modal-b"><p class="muted">The trip admin needs to add players first. Head to <b>More → Admin</b> to set up the roster, teams, and captains.</p>
+      <button class="btn" style="margin-top:12px" onclick="closeModal();go('more')">Go to Admin</button></div>`);
+    return;
+  }
+  renderNamePick();
+}
+function renderNamePick(){
+  const rows=(State.config.players||[]).map(p=>{
+    const t=team(p.teamId);
+    return `<button onclick="pickName('${p.id}')">
+      <span class="teamdot" style="background:${t?.color||'#999'}"></span>
+      <span class="av" style="width:26px;height:26px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:15px">${avatarOf(p.id)}</span>
+      <span style="flex:1">${esc(p.name)}</span>
+      ${p.isCaptain?'<span class="tag">C</span>':''}
+    </button>`;
+  }).join('');
+  showModal(`<div class="modal-h"><h2>Who are you?</h2><p class="muted" style="margin:4px 0 0">Pick your name — this phone will remember you.</p></div>
+    <div class="modal-b"><div class="namelist">${rows}</div></div>`);
+}
+function pickName(pid){ renderAvatarPick(pid); }
+function renderAvatarPick(pid){
+  const taken=new Set(Object.entries(State.avatars).filter(([id])=>id!==pid).map(([,e])=>e));
+  const current=avatarOf(pid);
+  const cells=AVATARS.map(a=>{
+    const dis=taken.has(a)&&a!==current;
+    return `<button ${dis?'disabled':''} class="${a===current?'on':''}" data-a="${a}" onclick="selectAvatar(this,'${pid}')">${a}</button>`;
+  }).join('');
+  showModal(`<div class="modal-h"><h2>Pick your avatar</h2><p class="muted" style="margin:4px 0 0">${esc(player(pid).name)} — this is your face on the board. Greyed-out ones are taken.</p></div>
+    <div class="modal-b">
+      <div class="gallery" id="galleryGrid">${cells}</div>
+      <button class="btn gold" style="margin-top:12px" onclick="confirmIdentity('${pid}')">That's me — lock it in</button>
+      <button class="btn ghost" style="margin-top:8px" onclick="renderNamePick()">Back</button>
+    </div>`);
+  window._pendingAv=current;
+}
+function selectAvatar(btn,pid){
+  $('#galleryGrid').querySelectorAll('button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on'); window._pendingAv=btn.dataset.a;
+}
+async function confirmIdentity(pid){
+  const emoji=window._pendingAv||'🏌️';
+  await Store.set('avatar:'+pid,{emoji});
+  State.avatars[pid]=emoji;
+  Device.set('me',pid); State.me=pid;
+  closeModal(); updateMeChip(); render();
+}
+
+/* ============================================================
+   MODALS
+   ============================================================ */
+function showModal(html){
+  const host=$('#modalHost');
+  host.innerHTML=`<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
+}
+function closeModal(){ $('#modalHost').innerHTML=''; }
+
+/* ============================================================
+   NAV + ROUTER
+   ============================================================ */
+const NAV=[
+  {id:'board', label:'Leaderboard', icon:'M4 20V10M10 20V4M16 20v-7M22 20H2'},
+  {id:'enter', label:'Enter Score', icon:'M12 4v16M4 12h16'},
+  {id:'rounds',label:'Rounds', icon:'M4 6h16M4 12h16M4 18h10'},
+  {id:'roster',label:'Roster', icon:'M16 7a4 4 0 11-8 0 4 4 0 018 0zM3 21a7 7 0 0114 0'},
+  {id:'more',  label:'More', icon:'M5 12h.01M12 12h.01M19 12h.01'},
+];
+function renderNav(){
+  $('#nav').innerHTML=NAV.map(n=>`<button class="${State.view===n.id?'on':''}" onclick="go('${n.id}')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${n.icon}"/></svg>${n.label}</button>`).join('');
+}
+function go(view){ State.view=view; window.scrollTo(0,0); render(); }
+
+function render(){
+  updateMeChip(); renderNav();
+  const s=$('#screen');
+  const map={board:viewBoard,enter:viewEnter,rounds:viewRounds,roster:viewRoster,more:viewMore};
+  s.innerHTML=`<div class="view">${(map[State.view]||viewBoard)()}</div>`;
+  if(State.view==='enter') wireEntry();
+}
+
+/* ============================================================
+   VIEW: LEADERBOARD
+   ============================================================ */
+function viewBoard(){
+  const cfg=State.config;
+  const teams=cfg.teams;
+  const pts=tripPoints();
+  const [A,B]=teams;
+  const pA=pts[A.id]||0, pB=pts[B.id]||0;
+  const total=(pA+pB)||1; let lp=(pA/total)*100; if(pA===0&&pB===0) lp=50;
+  const online=Store.online;
+
+  const rounds=cfg.rounds.filter(r=>r.format);
+  const tabs=rounds.length? `<div class="lb-round-tab">
+    ${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setRound('${r.id}')">${esc(r.name)} · ${FORMATS[r.format]?.label||''}</button>`).join('')}
+  </div>`:'';
+
+  let body='';
+  const active=cfg.rounds.find(r=>r.id===State.activeRound && r.format);
+  if(!rounds.length){
+    body=`<div class="card"><div class="empty"><div class="big">🏁</div><b>No rounds live yet</b><p class="muted" style="margin-top:6px">Once the admin assigns a format to a day, standings show up here.</p></div></div>`;
+  } else if(active){
+    body=roundLeaderboard(active);
+  }
+
+  return `
+  <div class="cup">
+    <div class="cup-head">
+      <div class="cup-team"><span class="nm" style="color:${A.color}">${esc(A.name)}</span><span class="pts">${fmtPts(pA)}</span><span class="sub">Points</span></div>
+      <div class="cup-team right"><span class="nm" style="color:${B.color}">${esc(B.name)}</span><span class="pts">${fmtPts(pB)}</span><span class="sub">Points</span></div>
+    </div>
+    <div class="meter"><div class="fillL" style="width:${lp}%;background:${A.color}"></div><div class="fillR" style="width:${100-lp}%;background:${B.color}"></div><div class="mid"></div></div>
+    <div class="cup-foot">${pA===pB?'All square':(pA>pB?A.name+' leads':B.name+' leads')} · ${rounds.length} of ${cfg.rounds.length} rounds set</div>
+  </div>
+  <div style="margin:0 2px 10px;font-size:11px;color:rgba(237,231,214,.55)">
+    <span class="status-dot" style="background:${online?'#5fce8f':'#E5A823'}"></span>${online?'Live — synced across everyone\u2019s phones':'Preview mode — deploy to Netlify for live sync'}
+  </div>
+  ${tabs}
+  ${body}
+  <div class="banner">Standings are provisional: each round goes to the team with the lower net total. The real match-play scoring drops in once you lock formats.</div>
+  `;
+}
+function fmtPts(n){ return Number.isInteger(n)?n:n.toFixed(1); }
+function setRound(id){ State.activeRound=id; render(); }
+
+function roundLeaderboard(round){
+  const isGroup=FORMATS[round.format]?.side==='group';
+  const pars=parsFor(round.id);
+  const parTot=pars.reduce((a,b)=>a+b,0);
+  const sides=sidesForRound(round).map(s=>{
+    const card=State.cards[cardKey(round.id,s.id)];
+    return {s,card,gross:grossTotal(card),net:netTotal(s.id,card,isGroup),thru:holesPlayed(card)};
+  }).filter(x=>x.gross!=null);
+  sides.sort((a,b)=>(a.net??999)-(b.net??999));
+  if(!sides.length){
+    return `<div class="card"><div class="empty"><div class="big">⛳</div><b>${esc(round.name)} — ${FORMATS[round.format]?.label}</b><p class="muted" style="margin-top:6px">No scores in yet. Tap <b>Enter Score</b> to get started.</p></div></div>`;
+  }
+  const rows=sides.map((x,i)=>{
+    const t=team(x.s.teamId);
+    const rel=x.gross-parTot*(x.thru/holeCount());
+    const relN=x.thru? Math.round(x.gross - pars.slice(0,x.thru).reduce((a,b)=>a+b,0)) : 0;
+    const cls=relN<0?'under':relN>0?'over':'even';
+    const relTxt=relN===0?'E':(relN>0?'+'+relN:relN);
+    return `<div class="row">
+      <div class="teamdot" style="background:${t?.color||'#999'}"></div>
+      <div class="av" style="border-color:${t?.color||'transparent'}">${sideAvatar(x.s)}</div>
+      <div class="nm"><b>${esc(sideLabel(x.s))}</b><span>Thru ${x.thru}${isGroup?'':' · Hcp '+(player(x.s.id)?.hcp??'—')}</span></div>
+      <div class="rel ${cls}">${relTxt}</div>
+      <div class="sc">${x.net??'—'}</div>
+    </div>`;
+  }).join('');
+  return `<div class="card">
+    <div class="eyebrow" style="color:var(--gold)">${esc(round.name)} · ${FORMATS[round.format]?.label} · ${esc(course(round.courseId)?.name||'Course TBD')}</div>
+    ${rows}
+    <div class="muted" style="margin-top:10px;font-size:11px">Net shown big · score-to-par at right. Group formats show gross.</div>
+  </div>`;
+}
+
+/* ============================================================
+   VIEW: ENTER SCORE
+   ============================================================ */
+function viewEnter(){
+  if(!State.me) return `<div class="card"><div class="empty"><div class="big">👋</div><b>Sign in first</b><p class="muted" style="margin-top:6px">Tap your name up top so we know whose scores you're entering.</p><button class="btn gold" style="margin-top:14px" onclick="openIdentity()">Pick my name</button></div></div>`;
+  const rounds=State.config.rounds.filter(r=>r.format);
+  if(!rounds.length) return `<div class="card"><div class="empty"><div class="big">🗓️</div><b>No round is live</b><p class="muted" style="margin-top:6px">The admin hasn't set a format for a day yet.</p></div></div>`;
+
+  if(!State.activeRound || !rounds.find(r=>r.id===State.activeRound)) State.activeRound=rounds[0].id;
+  const round=rounds.find(r=>r.id===State.activeRound);
+  const editable=editableSides(round);
+  if(!editable.length) return `<div class="card"><div class="empty"><div class="big">🔒</div><b>Nothing to enter here</b><p class="muted" style="margin-top:6px">You're not in a group for ${esc(round.name)}. Your captain can enter for the team, or ask the admin to add you to a group.</p></div></div>`;
+
+  if(!State.entrySide || !editable.find(s=>s.id===State.entrySide)) State.entrySide=editable[0].id;
+  const side=editable.find(s=>s.id===State.entrySide);
+  const card=State.cards[cardKey(round.id,side.id)]||{holes:{}};
+  const pars=parsFor(round.id), n=holeCount();
+
+  const roundTabs=`<div class="lb-round-tab">${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setEnterRound('${r.id}')">${esc(r.name)}</button>`).join('')}</div>`;
+  const sideTabs=`<div class="side-tabs">${editable.map(s=>`<button class="${s.id===State.entrySide?'on':''}" onclick="setSide('${s.id}')"><span class="av">${sideAvatar(s)}</span>${esc(sideLabel(s))}</button>`).join('')}</div>`;
+
+  const holeCells=Array.from({length:n},(_,i)=>{
+    const h=i+1, v=card.holes?.[h];
+    return `<button class="${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${h}${v!=null?'<span class="dot"></span>':''}</button>`;
+  }).join('');
+
+  const cur=card.holes?.[State.entryHole];
+  const par=pars[State.entryHole-1];
+  const g=grossTotal(card), thru=holesPlayed(card);
+  const enteredBy=card.enteredBy?`Last saved by ${esc(card.enteredBy)}`:'Not started';
+
+  return `
+  ${roundTabs}
+  <div class="muted" style="margin:-4px 2px 12px">${FORMATS[round.format]?.label} · ${esc(course(round.courseId)?.name||'Course TBD')} · ${esc(round.dateLabel)}</div>
+  ${sideTabs}
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+      <div class="disp" style="font-size:20px;font-weight:600">Hole ${State.entryHole} <span style="color:var(--text-dim);font-size:14px">· Par ${par}</span></div>
+      <div class="mono" style="font-weight:700">Total ${g??0} <span style="color:var(--text-dim);font-weight:500">(${thru}/${n})</span></div>
+    </div>
+    <div class="holepick">${holeCells}</div>
+    <div class="stepper">
+      <button class="pm" id="minus">–</button>
+      <div class="val" id="strokeVal">${cur??par}<small>Strokes</small></div>
+      <button class="pm" id="plus">+</button>
+    </div>
+    <div class="quickrow">
+      <button onclick="setStroke(${par})">Par</button>
+      <button onclick="clearHole()">Clear hole</button>
+      <button onclick="nextHole()">Next ›</button>
+    </div>
+    <div class="entered-by">${enteredBy}</div>
+  </div>
+  `;
+}
+function setEnterRound(id){ State.activeRound=id; State.entrySide=null; State.entryHole=1; render(); }
+function setSide(id){ State.entrySide=id; State.entryHole=1; render(); }
+function setHole(h){ State.entryHole=h; render(); }
+function nextHole(){ if(State.entryHole<holeCount()){ State.entryHole++; render(); } }
+
+let saveTimer=null;
+function wireEntry(){
+  const round=State.config.rounds.find(r=>r.id===State.activeRound);
+  const card=State.cards[cardKey(round.id,State.entrySide)]||{holes:{}};
+  const par=parsFor(round.id)[State.entryHole-1];
+  let val=card.holes?.[State.entryHole] ?? par;
+  const valEl=$('#strokeVal');
+  const paint=()=>{ if(valEl) valEl.innerHTML=`${val}<small>Strokes</small>`; };
+  const plus=$('#plus'), minus=$('#minus');
+  if(plus) plus.onclick=()=>{ val=Math.min(15,val+1); paint(); queueSave(val); };
+  if(minus) minus.onclick=()=>{ val=Math.max(1,val-1); paint(); queueSave(val); };
+  window.setStroke=(v)=>{ val=v; paint(); queueSave(v); };
+  window.clearHole=()=>{ saveHole(null); };
+}
+function queueSave(v){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>saveHole(v), 350); }
+async function saveHole(v){
+  const round=State.config.rounds.find(r=>r.id===State.activeRound);
+  const key=cardKey(round.id,State.entrySide);
+  const card=State.cards[key] || {holes:{}, enteredBy:'', updatedAt:0};
+  if(!card.holes) card.holes={};
+  if(v==null) delete card.holes[State.entryHole]; else card.holes[State.entryHole]=v;
+  card.enteredBy=player(State.me)?.name||'—';
+  card.updatedAt=Date.now();
+  State.cards[key]=card;
+  await Store.set(key,card);
+  if(State.view==='enter') render();
+}
+
+/* ============================================================
+   VIEW: ROUNDS
+   ============================================================ */
+function viewRounds(){
+  const rounds=State.config.rounds;
+  const cards=rounds.map(r=>{
+    const fmt=FORMATS[r.format];
+    const c=course(r.courseId);
+    return `<div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div class="eyebrow" style="margin-bottom:2px">${esc(r.dateLabel)}${r.teeTime?' · '+esc(r.teeTime):''}</div><h3 style="font-size:20px;text-transform:uppercase">${esc(r.name)}</h3></div>
+        ${r.format?`<span class="pill" style="background:var(--ink);color:var(--light)">${fmt.label}</span>`:'<span class="pill" style="background:var(--paper2);color:var(--text-dim)">Not set</span>'}
+      </div>
+      <div class="muted" style="margin-top:8px"><b style="color:var(--text)">${c?esc(c.name):'Course to be announced'}</b>${c?.par?' · Par '+c.par+(c.tees?' · '+esc(c.tees)+' tees':''):''}${c?.address?'<br>'+esc(c.address):''}${r.teeTime?'<br>First tee '+esc(r.teeTime):''}</div>
+      ${r.format?`<div class="fmt-blurb">${fmt.blurb}</div>`:''}
+    </div>`;
+  }).join('');
+  return `<div class="eyebrow">The Schedule</div>${cards}
+    <div class="muted" style="text-align:center;margin-top:6px">Formats and courses are set by the admin under <b>More</b>.</div>`;
+}
+
+/* ============================================================
+   VIEW: ROSTER
+   ============================================================ */
+function viewRoster(){
+  const teams=State.config.teams, players=State.config.players;
+  if(!players.length) return `<div class="card"><div class="empty"><div class="big">🧑‍🤝‍🧑</div><b>No players yet</b><p class="muted" style="margin-top:6px">Add the crew in Admin.</p><button class="btn gold" style="margin-top:14px" onclick="go('more')">Go to Admin</button></div></div>`;
+  const blocks=teams.map(t=>{
+    const roster=players.filter(p=>p.teamId===t.id);
+    const cap=roster.find(p=>p.isCaptain);
+    const rows=roster.map(p=>`<div class="roster-item">
+      <div class="av">${avatarOf(p.id)}</div>
+      <div class="info"><b>${esc(p.name)}</b><span>Handicap ${p.hcp??'—'}</span></div>
+      ${p.isCaptain?'<span class="tag">Captain</span>':''}
+    </div>`).join('') || '<div class="muted">No players assigned</div>';
+    return `<div class="card">
+      <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
+        <span class="teamdot" style="width:12px;height:12px;background:${t.color}"></span>
+        <h3 style="font-size:19px;text-transform:uppercase">${esc(t.name)}</h3>
+        <span class="muted" style="margin-left:auto">${roster.length} players</span>
+      </div>${rows}</div>`;
+  }).join('');
+  const unassigned=players.filter(p=>!p.teamId);
+  const un=unassigned.length?`<div class="card"><div class="eyebrow">Not on a team</div>${unassigned.map(p=>`<div class="roster-item"><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b></div></div>`).join('')}</div>`:'';
+  return `<div class="eyebrow">The Field · ${players.length} players</div>${blocks}${un}`;
+}
+
+/* ============================================================
+   VIEW: MORE (records + admin entry)
+   ============================================================ */
+function viewMore(){
+  const s=State.config.settings||{};
+  return `
+  <div class="card">
+    <div class="eyebrow">Trip HQ</div>
+    <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:6px">${esc(s.resort||'True Blue Resort')}</h3>
+    <div class="muted">${esc(s.checkIn||'')}</div>
+    <div class="muted" style="margin-top:8px">Oct 22–25, 2026 · 16 golfers${s.bookingRef?' · Ref '+esc(s.bookingRef):''}</div>
+  </div>
+  <div class="card">
+    <div class="eyebrow">The Vault</div>
+    <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:4px">League Records</h3>
+    <p class="muted">15 years of the fantasy league, now on the course. Past champions and the all-time Cup record will live here — tell me the history and I'll load it in.</p>
+  </div>
+  <div class="card">
+    <div class="eyebrow">Run the Trip</div>
+    <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:4px">Admin</h3>
+    <p class="muted" style="margin-bottom:12px">Set the roster, teams, captains, handicaps, and drop a format onto each day.</p>
+    <button class="btn" onclick="openAdmin()">Open admin control room</button>
+  </div>
+  <div class="muted" style="text-align:center;font-size:11px">The Cup · Myrtle Beach 2026 · built for the Blakefield ’06 crew</div>
+  `;
+}
+
+/* ============================================================
+   ADMIN
+   ============================================================ */
+function openAdmin(){
+  if(State.adminAuthed) return renderAdmin();
+  showModal(`<div class="modal-h"><h2>Admin PIN</h2><p class="muted" style="margin:4px 0 0">Ask the trip organizer. Default is 0605.</p></div>
+    <div class="modal-b">
+      <div class="field"><input id="pinInput" type="tel" inputmode="numeric" placeholder="••••" style="text-align:center;font-size:24px;letter-spacing:.3em"/></div>
+      <button class="btn gold" onclick="checkPin()">Enter</button>
+      <div id="pinErr" class="muted" style="color:var(--red);text-align:center;margin-top:8px"></div>
+    </div>`);
+}
+function checkPin(){
+  const v=$('#pinInput').value.trim();
+  if(v===String(State.config.settings.adminPin)){ State.adminAuthed=true; renderAdmin(); }
+  else $('#pinErr').textContent='Nope, try again.';
+}
+function renderAdmin(){
+  const cfg=State.config;
+  const playerRows=(cfg.players||[]).map(p=>{
+    const t=team(p.teamId);
+    return `<div class="roster-item">
+      <div class="av">${avatarOf(p.id)}</div>
+      <div class="info"><b>${esc(p.name)}</b><span>Hcp ${p.hcp??'—'} · ${t?esc(t.name):'No team'}${p.isCaptain?' · Captain':''}</span></div>
+      <button class="btn sm ghost" onclick="editPlayer('${p.id}')">Edit</button>
+    </div>`;
+  }).join('') || '<div class="muted">No players yet.</div>';
+
+  const roundRows=(cfg.rounds||[]).map(r=>`
+    <div class="card tight">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <b>${esc(r.name)} · ${esc(r.dateLabel)}</b>
+      </div>
+      <div class="two">
+        <div class="field" style="margin:0">
+          <label>Format</label>
+          <select onchange="setRoundField('${r.id}','format',this.value)">
+            <option value="">— none —</option>
+            ${Object.entries(FORMATS).map(([k,f])=>`<option value="${k}" ${r.format===k?'selected':''}>${f.label}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field" style="margin:0">
+          <label>Course</label>
+          <select onchange="setRoundField('${r.id}','courseId',this.value)">
+            <option value="">— TBD —</option>
+            ${(cfg.courses||[]).map(c=>`<option value="${c.id}" ${r.courseId===c.id?'selected':''}>${esc(c.name)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+    </div>`).join('');
+
+  showModal(`
+    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center">
+      <h2>Control Room</h2><button class="btn sm ghost" onclick="closeModal()">Done</button>
+    </div>
+    <div class="modal-b">
+      <div class="eyebrow">Teams</div>
+      <div class="two" style="margin-bottom:14px">
+        ${cfg.teams.map(t=>`<div class="field" style="margin:0"><label>Team name</label>
+          <input value="${esc(t.name)}" onchange="setTeamName('${t.id}',this.value)"/>
+          <input type="color" value="${t.color}" onchange="setTeamColor('${t.id}',this.value)" style="width:100%;height:34px;margin-top:6px;border-radius:8px;border:1px solid var(--line);background:#fff"/>
+        </div>`).join('')}
+      </div>
+
+      <div class="eyebrow">Players &amp; handicaps</div>
+      <div style="margin-bottom:8px">${playerRows}</div>
+      <div class="two">
+        <button class="btn ghost sm" style="width:100%" onclick="editPlayer('')">+ Add player</button>
+        <button class="btn ghost sm" style="width:100%" onclick="seedSample()">Reload trip roster</button>
+      </div>
+
+      <div class="divider"></div>
+      <div class="eyebrow">Rounds — drop a format on each day</div>
+      ${roundRows}
+
+      <div class="divider"></div>
+      <div class="eyebrow">Courses</div>
+      <div id="courseList">${(cfg.courses||[]).map(c=>`<div class="roster-item"><div class="info"><b>${esc(c.name)}</b><span>Par ${c.pars?c.pars.reduce((a,b)=>a+b,0):'—'}</span></div><button class="btn sm ghost" onclick="delCourse('${c.id}')">Remove</button></div>`).join('')||'<div class="muted">None yet — add when the organizer sends them.</div>'}</div>
+      <div class="field" style="margin-top:8px"><input id="newCourse" placeholder="Course name"/></div>
+      <button class="btn ghost sm" onclick="addCourse()">+ Add course</button>
+
+      <div class="divider"></div>
+      <div class="eyebrow">Danger zone</div>
+      <button class="btn ghost sm" onclick="resetScores()" style="color:var(--red);border-color:var(--red)">Clear all scores</button>
+    </div>
+  `);
+}
+
+/* admin mutations */
+async function saveConfig(){ await Store.set('config',State.config); }
+function setTeamName(id,v){ team(id).name=v; saveConfig(); }
+function setTeamColor(id,v){ team(id).color=v; saveConfig(); render(); }
+async function setRoundField(rid,field,val){ State.config.rounds.find(r=>r.id===rid)[field]=val; await saveConfig(); renderAdmin(); }
+
+function editPlayer(pid){
+  const p=pid?player(pid):{id:'',name:'',hcp:'',teamId:'',isCaptain:false};
+  showModal(`<div class="modal-h"><h2>${pid?'Edit player':'Add player'}</h2></div>
+    <div class="modal-b">
+      <div class="field"><label>Name</label><input id="pName" value="${esc(p.name)}"/></div>
+      <div class="two">
+        <div class="field"><label>Handicap</label><input id="pHcp" type="number" step="0.1" value="${p.hcp??''}"/></div>
+        <div class="field"><label>Team</label><select id="pTeam">
+          <option value="">— none —</option>
+          ${State.config.teams.map(t=>`<option value="${t.id}" ${p.teamId===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}
+        </select></div>
+      </div>
+      <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:4px 0 14px">
+        <input id="pCap" type="checkbox" ${p.isCaptain?'checked':''} style="width:20px;height:20px"/> Team captain
+      </label>
+      <button class="btn gold" onclick="savePlayer('${pid}')">Save</button>
+      ${pid?`<button class="btn ghost" style="margin-top:8px;color:var(--red)" onclick="delPlayer('${pid}')">Delete player</button>`:''}
+      <button class="btn ghost" style="margin-top:8px" onclick="renderAdmin()">Back</button>
+    </div>`);
+}
+async function savePlayer(pid){
+  const name=$('#pName').value.trim(); if(!name) return;
+  const rec={ name, hcp:$('#pHcp').value===''?null:Number($('#pHcp').value), teamId:$('#pTeam').value, isCaptain:$('#pCap').checked };
+  if(pid){ Object.assign(player(pid),rec); }
+  else { rec.id='p'+Date.now().toString(36); rec.avatar=''; State.config.players.push(rec); }
+  await saveConfig(); renderAdmin();
+}
+async function delPlayer(pid){ State.config.players=State.config.players.filter(p=>p.id!==pid); await saveConfig(); renderAdmin(); }
+
+async function seedSample(){
+  // (Re)load the real trip roster from the itinerary, keeping any team/hcp/captain
+  // edits already made to matching names so this is safe to re-run.
+  const existing=Object.fromEntries((State.config.players||[]).map(p=>[p.name,p]));
+  State.config.players=TRIP_ROSTER.map((name,i)=>{
+    const e=existing[name]||{};
+    return { id:e.id||('p'+i), name, hcp:e.hcp??null, teamId:e.teamId||'', isCaptain:e.isCaptain||false, avatar:e.avatar||'' };
+  });
+  await saveConfig(); renderAdmin();
+}
+async function addCourse(){
+  const name=$('#newCourse').value.trim(); if(!name) return;
+  State.config.courses.push({id:'c'+Date.now().toString(36), name, pars:Array.from({length:holeCount()},()=>4)});
+  await saveConfig(); renderAdmin();
+}
+async function delCourse(id){ State.config.courses=State.config.courses.filter(c=>c.id!==id); await saveConfig(); renderAdmin(); }
+async function resetScores(){
+  const keys=Object.keys(State.cards);
+  for(const k of keys){ await Store.del(k); }
+  State.cards={}; renderAdmin(); 
+}
+
+/* ============================================================
+   BOOT
+   ============================================================ */
+(async function boot(){
+  await loadAll();
+  updateMeChip();
+  render();
+  startPoll();
+})();
+</script>
+</body>
+</html>
