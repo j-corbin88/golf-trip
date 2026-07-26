@@ -184,6 +184,8 @@ input,select{font-family:inherit;font-size:16px}
 .draft-pickbtn{display:flex;align-items:center;gap:6px;background:var(--paper2);border:1px solid var(--line);border-radius:9px;padding:9px;font-size:13px;font-weight:600;text-align:left;color:var(--text)}
 .draft-pickbtn small{margin-left:auto;color:var(--text-dim);font-family:'Roboto Mono'}
 .onclock-card{text-align:center;border-radius:14px;padding:14px;margin-bottom:12px;background:var(--paper);box-shadow:var(--shadow)}
+.fmt-i{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;border:1.5px solid currentColor;font-family:Georgia,'Times New Roman',serif;font-style:italic;font-weight:700;font-size:10px;line-height:1;vertical-align:middle;margin-left:5px;opacity:.65;cursor:pointer;flex:none;text-transform:none}
+.fmt-i:active{opacity:1}
 </style>
 </head>
 <body>
@@ -313,6 +315,39 @@ const FORMATS = {
 };
 
 const AVATARS = ['⛳','🏌️','🏆','🎯','🦅','🐦','🍺','🥃','🚌','🕶️','🧢','🐐','🦈','🐊','🐅','🐯','🦍','🦏','🐺','🦁','🎩','👑','🃏','🎣','🐷','🦌','🍔','🌭','🏴‍☠️','⚡','🔥','💣','🎸','🎲','🚀','🛥️','🌊','🏖️','☕','🥩'];
+
+/* ---------- Format info icon (tap for details, visible to everyone) ---------- */
+function fmtInfo(key){
+  if(!key || !FORMATS[key]) return '';
+  return `<span class="fmt-i" role="button" tabindex="0" onclick="event.stopPropagation();showFormatInfo('${key}')" title="Format details">i</span>`;
+}
+function scrambleMethodLabel(){
+  const m=State.config?.settings?.scrambleHcp||'low';
+  return ({low:"the side plays off its lowest handicap",usga:"USGA 35% / 15% of the pair",avg:"the average of the side's handicaps",scratch:"scratch — no strokes given"})[m]||m;
+}
+function formatDetailNote(key){
+  if(!useHcp()) return 'Handicaps are turned off for this event — every format is played gross.';
+  const pct=(f)=>Math.round(allowanceFor(f)*100);
+  const map={
+    singles:`Match play, 1 point per match. Strokes at ${pct('singles')}% of course handicap; the low player in each match plays off scratch.`,
+    foursomes:`2-v-2 match play, one ball, partners alternating shots. The side plays off 50% of the pair's combined course handicap.`,
+    betterball:`2-v-2 match play at ${pct('betterball')}% allowance; each hole the team takes the better net of the two partners.`,
+    shramble:`2-v-2 match play at ${pct('shramble')}% allowance. Best drive off the tee, then each partner plays their own ball in.`,
+    scramble:`Match play, one ball per side. Side handicap: ${scrambleMethodLabel()}.`,
+    teamtotal:`Stroke play — every player's net over the segment is added up and the lower team total wins.`,
+  };
+  return map[key]||'';
+}
+function showFormatInfo(key){
+  const f=FORMATS[key]; if(!f) return;
+  const note=formatDetailNote(key);
+  showModal(`<div class="modal-h"><h2>${esc(f.label)}</h2></div>
+    <div class="modal-b">
+      <p style="line-height:1.6;color:var(--text);margin:0">${esc(f.blurb)}</p>
+      ${note?`<div style="margin-top:12px;padding:11px 13px;background:var(--paper2);border-radius:10px;font-size:12px;color:var(--text-dim);line-height:1.55">${esc(note)}</div>`:''}
+      <button class="btn" style="margin-top:14px" onclick="closeModal()">Got it</button>
+    </div>`);
+}
 
 /* ---------- State ---------- */
 const TRIP_ROSTER = [
@@ -511,6 +546,16 @@ const segMatches = (seg)=> seg?.matches || [];
 const perSideFor = (fmt)=> FORMATS[fmt]?.perSide || (fmt==='singles'?1:2);
 const teamRoster = (teamId)=> (State.config.players||[]).filter(p=>p.teamId===teamId);
 const teamOfSide = (ids)=> ids.map(id=>player(id)?.teamId).find(Boolean) || null;
+function matchOfSide(seg, sideId){
+  const ms=segMatches(seg); if(!ms.length||!sideId) return null;
+  if(String(sideId).includes(':')){ const mid=String(sideId).split(':')[0]; return ms.find(m=>m.id===mid)||null; }
+  return ms.find(m=>[...m.a,...m.b].includes(sideId))||null;
+}
+function startHoleForSide(seg, sideId){
+  const m=matchOfSide(seg, sideId);
+  const s=m&&m.start;
+  return (s!=null && s!=='') ? Number(s) : seg.start;
+}
 
 /* which sides exist for a segment — derived from matches when present */
 function sidesForSeg(round, seg){
@@ -956,7 +1001,7 @@ function setRound(id){ State.activeRound=id; render(false); }
 
 function teamTotalBoard(round,seg){
   const c=courseOf(round);
-  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · Team Total · ${esc(c?.name||'Course TBD')}</div>`;
+  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · Team Total${fmtInfo('teamtotal')} · ${esc(c?.name||'Course TBD')}</div>`;
   const tn=segTeamNet(round,seg);
   const teams=(State.config.teams||[]).map(t=>({t, net:tn[t.id]?.net, played:tn[t.id]?.played}));
   const playedTeams=teams.filter(x=>x.played);
@@ -976,7 +1021,7 @@ function teamTotalBoard(round,seg){
 function segMatchBoard(round,seg){
   const c=courseOf(round);
   const [TA,TB]=State.config.teams;
-  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label} · ${esc(c?.name||'Course TBD')}</div>`;
+  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')}</div>`;
   const rows=segMatches(seg).map(m=>{
     const res=computeMatch(round,seg,m);
     const aT=teamOfSide(m.a), bT=teamOfSide(m.b);
@@ -1003,7 +1048,7 @@ function segLeaderboard(round,seg){
   }).filter(x=>x.gross!=null);
   sides.sort((a,b)=>(a.net??999)-(b.net??999));
   const segName = round.split ? seg.label : `${round.name}`;
-  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label} · ${esc(c?.name||'Course TBD')}</div>`;
+  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')}</div>`;
   if(!sides.length){
     return `<div class="card">${head}<div class="empty" style="padding:16px"><div class="big">⛳</div><p class="muted" style="margin-top:4px">No scores in yet.</p></div></div>`;
   }
@@ -1048,14 +1093,14 @@ function viewEnter(){
 
   const editable=editableSidesForSeg(round,seg);
   const roundTabs=roundTabsTop;
-  const segTabs=(segs.length>1)?`<div class="lb-round-tab" style="margin-top:-6px">${segs.map(s=>`<button class="${s.id===State.entrySeg?'on':''}" onclick="setEnterSeg('${s.id}')">${esc(s.label)} · ${FORMATS[s.format]?.label||''}</button>`).join('')}</div>`:'';
+  const segTabs=(segs.length>1)?`<div class="lb-round-tab" style="margin-top:-6px">${segs.map(s=>`<button class="${s.id===State.entrySeg?'on':''}" onclick="setEnterSeg('${s.id}')">${esc(s.label)} · ${FORMATS[s.format]?.label||''}${fmtInfo(s.format)}</button>`).join('')}</div>`:'';
   const c=courseOf(round), pars=c?.pars||[];
 
   if(!editable.length) return `${roundTabs}${segTabs}<div class="card"><div class="empty"><div class="big">🔒</div><b>Nothing to enter here</b><p class="muted" style="margin-top:6px">You're not in a group for this segment. Your captain can enter for the team, or ask the admin to add you to a group.</p></div></div>`;
 
-  if(!State.entrySide || !editable.find(s=>s.id===State.entrySide)) State.entrySide=editable[0].id;
-  // clamp the current hole into this segment's range
-  if(State.entryHole<seg.start || State.entryHole>seg.end) State.entryHole=seg.start;
+  if(!State.entrySide || !editable.find(s=>s.id===State.entrySide)){ State.entrySide=editable[0].id; State.entryHole=startHoleForSide(seg,State.entrySide); }
+  // clamp the current hole into this segment's range (default to this side's start hole)
+  if(State.entryHole<seg.start || State.entryHole>seg.end) State.entryHole=startHoleForSide(seg,State.entrySide);
   const side=editable.find(s=>s.id===State.entrySide);
   const card=State.cards[cardKey(round.id,seg.id,side.id)]||{holes:{}};
 
@@ -1076,7 +1121,7 @@ function viewEnter(){
   return `
   ${roundTabs}
   ${segTabs}
-  <div class="muted" style="margin:-4px 2px 12px">${FORMATS[seg.format]?.label} · ${esc(c?.name||'Course TBD')} · ${esc(round.dateLabel)}${round.split?' · '+esc(seg.label):''}</div>
+  <div class="muted" style="margin:-4px 2px 12px">${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')} · ${esc(round.dateLabel)}${round.split?' · '+esc(seg.label):''}</div>
   ${sideTabs}
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
@@ -1090,8 +1135,9 @@ function viewEnter(){
       <button class="pm" id="plus">+</button>
     </div>
     <div class="quickrow">
+      <button onclick="prevHole()">‹ Back</button>
       <button onclick="setStroke(${par})">Par</button>
-      <button onclick="clearHole()">Clear hole</button>
+      <button onclick="clearHole()">Clear</button>
       <button onclick="nextHole()">Next ›</button>
     </div>
     <div class="entered-by" id="enteredBy">${enteredBy}</div>
@@ -1101,12 +1147,21 @@ function viewEnter(){
 }
 function setEnterRound(id){ State.activeRound=id; State.entrySeg=null; State.entrySide=null; render(false); }
 function setEnterSeg(id){ State.entrySeg=id; State.entrySide=null; render(false); }
-function setSide(id){ State.entrySide=id; render(false); }
+function setSide(id){ State.entrySide=id; const r=curEntryRefs(); if(r.seg) State.entryHole=startHoleForSide(r.seg,id); render(false); }
 function setHole(h){ State.entryHole=h; render(false); }
 function nextHole(){
   const round=State.config.rounds.find(r=>r.id===State.activeRound);
   const seg=liveSegs(round).find(s=>s.id===State.entrySeg);
-  if(seg && State.entryHole<seg.end){ State.entryHole++; render(false); }
+  if(!seg) return;
+  State.entryHole = State.entryHole>=seg.end ? seg.start : State.entryHole+1;  // wrap last → first
+  render(false);
+}
+function prevHole(){
+  const round=State.config.rounds.find(r=>r.id===State.activeRound);
+  const seg=liveSegs(round).find(s=>s.id===State.entrySeg);
+  if(!seg) return;
+  State.entryHole = State.entryHole<=seg.start ? seg.end : State.entryHole-1;  // wrap first → last
+  render(false);
 }
 
 let saveTimer=null;
@@ -1169,7 +1224,7 @@ function viewRounds(){
     const segs=segsOf(r);
     const anyFmt=roundLive(r);
     const fmtPills=anyFmt
-      ? segs.filter(s=>s.format).map(s=>`<span class="pill" style="background:var(--ink);color:var(--light)">${r.split?esc(s.label)+': ':''}${FORMATS[s.format].label}</span>`).join(' ')
+      ? segs.filter(s=>s.format).map(s=>`<span class="pill" style="background:var(--ink);color:var(--light)">${r.split?esc(s.label)+': ':''}${FORMATS[s.format].label}${fmtInfo(s.format)}</span>`).join(' ')
       : '<span class="pill" style="background:var(--paper2);color:var(--text-dim)">Not set</span>';
     const blurbs=anyFmt?segs.filter(s=>s.format).map(s=>`<div class="fmt-blurb">${r.split?'<b>'+esc(s.label)+' — </b>':''}${FORMATS[s.format].blurb}</div>`).join(''):'';
     return `<div class="card">
@@ -1409,7 +1464,9 @@ function renderDraftRunner(){
   const poolBtns=pool.map(p=>`<button class="draft-pickbtn" onclick="makePick('${p.id}')"><span>${avatarOf(p.id)}</span> ${esc(p.name)} <small>${hcpOf(p.id)??'—'}</small></button>`).join('');
   const capName=onClock?(player(d.captains[onClock])?.name?.split(' ')[0]||''):'';
   showModal(`
-    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Draft</h2><button class="btn sm ghost" onclick="finishDraft()">${done?'Finish':'Close'}</button></div>
+    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Draft</h2>
+      <div style="display:flex;gap:6px"><button class="btn sm ghost" onclick="confirmResetDraft()">Reset</button><button class="btn sm ghost" onclick="finishDraft()">${done?'Finish':'Close'}</button></div>
+    </div>
     <div class="modal-b">
       ${done
         ? `<div class="onclock-card"><div class="eyebrow" style="color:var(--gold)">Draft complete</div><b style="font-size:20px">Teams are set 🏆</b></div>`
@@ -1419,6 +1476,14 @@ function renderDraftRunner(){
       <div class="divider"></div>
       <div class="eyebrow">Board</div>
       ${draftBoardHTML(d)}
+    </div>`);
+}
+function confirmResetDraft(){
+  showModal(`<div class="modal-h"><h2>Reset the draft?</h2></div>
+    <div class="modal-b">
+      <p class="muted" style="line-height:1.5">This clears every pick and both captains, and unassigns all teams so you can start over. Scores aren't affected.</p>
+      <button class="btn" style="margin-top:14px;background:var(--red);color:#fff" onclick="resetDraft()">Yes, clear and reset</button>
+      <button class="btn ghost" style="margin-top:8px" onclick="renderDraftRunner()">Never mind</button>
     </div>`);
 }
 
@@ -1602,7 +1667,9 @@ function renderPairings(rid, segId){
   const matchRows = ms.length ? ms.map(m=>`
     <div class="roster-item">
       <div class="info"><b>${esc(m.a.map(nm).join(' / '))}</b><span>vs ${esc(m.b.map(nm).join(' / '))}</span></div>
-      <button class="btn sm ghost" style="color:var(--red)" onclick="removeMatch('${rid}','${segId}','${m.id}')">Remove</button>
+      <div style="display:flex;align-items:center;gap:4px"><span style="font-size:10px;color:var(--text-dim)">start</span>
+        <input type="number" min="${seg.start}" max="${seg.end}" value="${m.start||seg.start}" onchange="setMatchStart('${rid}','${segId}','${m.id}',this.value)" style="width:46px;padding:6px;border-radius:8px;border:1px solid var(--line);text-align:center"/></div>
+      <button class="btn sm ghost" style="color:var(--red)" onclick="removeMatch('${rid}','${segId}','${m.id}')">✕</button>
     </div>`).join('') : '<div class="muted">No matches yet.</div>';
   const opts=(roster)=>roster.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
   const aSelects=Array.from({length:per},(_,i)=>`<select id="pairA${i}" class="pairsel">${opts(aRoster)}</select>`).join('');
@@ -1611,7 +1678,7 @@ function renderPairings(rid, segId){
   showModal(`
     <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Pairings</h2><button class="btn sm ghost" onclick="renderAdmin()">Done</button></div>
     <div class="modal-b">
-      <div class="muted" style="margin-bottom:10px">${esc(r.name)}${r.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label} · ${per} per side</div>
+      <div class="muted" style="margin-bottom:10px">${esc(r.name)}${r.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${per} per side</div>
       ${(!canAuto)?`<div class="banner">Assign players to both teams first — ${esc(TA.name)} has ${aRoster.length}, ${esc(TB.name)} has ${bRoster.length}.</div>`:''}
       <div class="eyebrow">Matches</div>
       <div style="margin-bottom:10px">${matchRows}</div>
@@ -1645,6 +1712,7 @@ async function addMatch(rid,segId,per){
   await saveConfig(); renderPairings(rid,segId);
 }
 async function removeMatch(rid,segId,mid){ const {seg}=findSeg(rid,segId); seg.matches=(seg.matches||[]).filter(m=>m.id!==mid); await saveConfig(); renderPairings(rid,segId); }
+async function setMatchStart(rid,segId,mid,v){ const {seg}=findSeg(rid,segId); const m=(seg.matches||[]).find(x=>x.id===mid); if(m) m.start=(v===''?undefined:Number(v)); await saveConfig(); renderPairings(rid,segId); }
 async function clearMatches(rid,segId){ const {seg}=findSeg(rid,segId); seg.matches=[]; await saveConfig(); renderPairings(rid,segId); }
 
 function editPlayer(pid){
