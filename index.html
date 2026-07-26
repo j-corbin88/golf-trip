@@ -56,7 +56,7 @@ input,select{font-family:inherit;font-size:16px}
 
 /* ---- Layout ---- */
 .screen{max-width:640px;margin:0 auto;padding:16px 14px 24px;min-height:60vh}
-.view{animation:fade .25s ease}
+.view.anim{animation:fade .25s ease}
 @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .eyebrow{font-family:'Oswald';text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:var(--gold);font-weight:600;margin-bottom:8px}
 .card{background:var(--paper);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-bottom:14px;position:relative;overflow:hidden}
@@ -146,6 +146,9 @@ input,select{font-family:inherit;font-size:16px}
 .roster-item .info{flex:1;min-width:0}
 .roster-item .info b{font-size:14px}
 .roster-item .info span{font-size:11px;color:var(--text-dim);display:block}
+.roster-item .hcp{margin-left:auto;text-align:center;font-family:'Oswald';line-height:1;min-width:40px}
+.roster-item .hcp b{font-size:19px;font-weight:700;display:block;color:var(--text)}
+.roster-item .hcp span{font-size:9px;letter-spacing:.12em;color:var(--text-dim)}
 .tag{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--ink);color:var(--light)}
 .empty{text-align:center;padding:28px 16px;color:var(--text-dim)}
 .empty .big{font-size:34px;margin-bottom:8px}
@@ -427,8 +430,10 @@ async function refresh(){
     const avs=await Store.list('avatar:');
     State.avatars={}; Object.entries(avs).forEach(([k,v])=>{ State.avatars[k.split(':')[1]]=v?.emoji; });
     State.cards=await Store.list('card:');
-    const cfg=await Store.get('config'); if(cfg) State.config=cfg;
-    render();
+    const cfg=await Store.get('config'); if(cfg){ State.config=cfg; }
+    // Only touch the screen where live data actually shows — the leaderboard.
+    // Other views hold still; their data is refreshed in State for when you open them.
+    if(State.view==='board') updateBoard();
   }catch(e){}
 }
 let pollTimer=null;
@@ -516,33 +521,52 @@ function renderNav(){
   $('#nav').innerHTML=NAV.map(n=>`<button class="${State.view===n.id?'on':''}" onclick="go('${n.id}')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${n.icon}"/></svg>${n.label}</button>`).join('');
 }
-function go(view){ State.view=view; window.scrollTo(0,0); render(); }
+function go(view){ State.view=view; window.scrollTo(0,0); render(true); }
 
-function render(){
+function render(animate=false){
   updateMeChip(); renderNav();
   const s=$('#screen');
   const map={board:viewBoard,enter:viewEnter,rounds:viewRounds,roster:viewRoster,more:viewMore};
-  s.innerHTML=`<div class="view">${(map[State.view]||viewBoard)()}</div>`;
+  s.innerHTML=`<div class="view${animate?' anim':''}">${(map[State.view]||viewBoard)()}</div>`;
   if(State.view==='enter') wireEntry();
 }
 
 /* ============================================================
    VIEW: LEADERBOARD
    ============================================================ */
-function viewBoard(){
-  const cfg=State.config;
-  const teams=cfg.teams;
-  const pts=tripPoints();
-  const [A,B]=teams;
-  const pA=pts[A.id]||0, pB=pts[B.id]||0;
-  const total=(pA+pB)||1; let lp=(pA/total)*100; if(pA===0&&pB===0) lp=50;
+function boardStats(){
+  const cfg=State.config, [A,B]=cfg.teams, pts=tripPoints();
+  const pA=pts[A.id]||0, pB=pts[B.id]||0, total=(pA+pB)||1;
+  let lp=(pA/total)*100; if(pA===0&&pB===0) lp=50;
+  return {A,B,pA,pB,lp};
+}
+function cupHTML(){
+  const {A,B,pA,pB,lp}=boardStats(); const cfg=State.config;
+  const rounds=cfg.rounds.filter(r=>r.format);
+  return `<div class="cup">
+    <div class="cup-head">
+      <div class="cup-team"><span class="nm" style="color:${A.color}">${esc(A.name)}</span><span class="pts" id="ptsL">${fmtPts(pA)}</span><span class="sub">Points</span></div>
+      <div class="cup-team right"><span class="nm" style="color:${B.color}">${esc(B.name)}</span><span class="pts" id="ptsR">${fmtPts(pB)}</span><span class="sub">Points</span></div>
+    </div>
+    <div class="meter"><div class="fillL" id="fillL" style="width:${lp}%;background:${A.color}"></div><div class="fillR" id="fillR" style="width:${100-lp}%;background:${B.color}"></div><div class="mid"></div></div>
+    <div class="cup-foot" id="cupFoot">${cupFootText()}</div>
+  </div>`;
+}
+function cupFootText(){
+  const {A,B,pA,pB}=boardStats(); const cfg=State.config;
+  const rounds=cfg.rounds.filter(r=>r.format).length;
+  return `${pA===pB?'All square':(pA>pB?A.name+' leads':B.name+' leads')} · ${rounds} of ${cfg.rounds.length} rounds set`;
+}
+function statusInnerHTML(){
   const online=Store.online;
-
+  return `<span class="status-dot" style="background:${online?'#5fce8f':'#E5A823'}"></span>${online?'Live — synced across everyone\u2019s phones':'Preview mode — deploy to Netlify for live sync'}`;
+}
+function boardBodyHTML(){
+  const cfg=State.config;
   const rounds=cfg.rounds.filter(r=>r.format);
   const tabs=rounds.length? `<div class="lb-round-tab">
     ${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setRound('${r.id}')">${esc(r.name)} · ${FORMATS[r.format]?.label||''}</button>`).join('')}
   </div>`:'';
-
   let body='';
   const active=cfg.rounds.find(r=>r.id===State.activeRound && r.format);
   if(!rounds.length){
@@ -550,26 +574,31 @@ function viewBoard(){
   } else if(active){
     body=roundLeaderboard(active);
   }
-
-  return `
-  <div class="cup">
-    <div class="cup-head">
-      <div class="cup-team"><span class="nm" style="color:${A.color}">${esc(A.name)}</span><span class="pts">${fmtPts(pA)}</span><span class="sub">Points</span></div>
-      <div class="cup-team right"><span class="nm" style="color:${B.color}">${esc(B.name)}</span><span class="pts">${fmtPts(pB)}</span><span class="sub">Points</span></div>
-    </div>
-    <div class="meter"><div class="fillL" style="width:${lp}%;background:${A.color}"></div><div class="fillR" style="width:${100-lp}%;background:${B.color}"></div><div class="mid"></div></div>
-    <div class="cup-foot">${pA===pB?'All square':(pA>pB?A.name+' leads':B.name+' leads')} · ${rounds.length} of ${cfg.rounds.length} rounds set</div>
-  </div>
-  <div style="margin:0 2px 10px;font-size:11px;color:rgba(237,231,214,.55)">
-    <span class="status-dot" style="background:${online?'#5fce8f':'#E5A823'}"></span>${online?'Live — synced across everyone\u2019s phones':'Preview mode — deploy to Netlify for live sync'}
-  </div>
-  ${tabs}
-  ${body}
-  <div class="banner">Standings are provisional: each round goes to the team with the lower net total. The real match-play scoring drops in once you lock formats.</div>
-  `;
+  const banner=`<div class="banner">Standings are provisional: each round goes to the team with the lower net total. The real match-play scoring drops in once you lock formats.</div>`;
+  return tabs+body+banner;
+}
+function viewBoard(){
+  return `${cupHTML()}
+  <div id="syncStatus" style="margin:0 2px 10px;font-size:11px;color:rgba(237,231,214,.55)">${statusInnerHTML()}</div>
+  <div id="boardBody">${boardBodyHTML()}</div>`;
+}
+// Surgical update used by the 5s poll — no full re-render, no page fade.
+function updateBoard(){
+  const body=document.getElementById('boardBody');
+  if(!body){ render(false); return; }               // structure missing: rebuild once, quietly
+  const {A,B,pA,pB,lp}=boardStats();
+  const fL=document.getElementById('fillL'), fR=document.getElementById('fillR');
+  if(fL) fL.style.width=lp+'%';                      // width transition animates smoothly
+  if(fR) fR.style.width=(100-lp)+'%';
+  const pl=document.getElementById('ptsL'), pr=document.getElementById('ptsR');
+  if(pl) pl.textContent=fmtPts(pA);
+  if(pr) pr.textContent=fmtPts(pB);
+  const foot=document.getElementById('cupFoot'); if(foot) foot.textContent=cupFootText();
+  const st=document.getElementById('syncStatus'); if(st) st.innerHTML=statusInnerHTML();
+  body.innerHTML=boardBodyHTML();
 }
 function fmtPts(n){ return Number.isInteger(n)?n:n.toFixed(1); }
-function setRound(id){ State.activeRound=id; render(); }
+function setRound(id){ State.activeRound=id; render(false); }
 
 function roundLeaderboard(round){
   const isGroup=FORMATS[round.format]?.side==='group';
@@ -627,7 +656,7 @@ function viewEnter(){
 
   const holeCells=Array.from({length:n},(_,i)=>{
     const h=i+1, v=card.holes?.[h];
-    return `<button class="${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${h}${v!=null?'<span class="dot"></span>':''}</button>`;
+    return `<button id="hole-${h}" class="${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${h}${v!=null?'<span class="dot"></span>':''}</button>`;
   }).join('');
 
   const cur=card.holes?.[State.entryHole];
@@ -642,7 +671,7 @@ function viewEnter(){
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
       <div class="disp" style="font-size:20px;font-weight:600">Hole ${State.entryHole} <span style="color:var(--text-dim);font-size:14px">· Par ${par}</span></div>
-      <div class="mono" style="font-weight:700">Total ${g??0} <span style="color:var(--text-dim);font-weight:500">(${thru}/${n})</span></div>
+      <div class="mono" id="entryTotal" style="font-weight:700">Total ${g??0} <span style="color:var(--text-dim);font-weight:500">(${thru}/${n})</span></div>
     </div>
     <div class="holepick">${holeCells}</div>
     <div class="stepper">
@@ -655,14 +684,14 @@ function viewEnter(){
       <button onclick="clearHole()">Clear hole</button>
       <button onclick="nextHole()">Next ›</button>
     </div>
-    <div class="entered-by">${enteredBy}</div>
+    <div class="entered-by" id="enteredBy">${enteredBy}</div>
   </div>
   `;
 }
-function setEnterRound(id){ State.activeRound=id; State.entrySide=null; State.entryHole=1; render(); }
-function setSide(id){ State.entrySide=id; State.entryHole=1; render(); }
-function setHole(h){ State.entryHole=h; render(); }
-function nextHole(){ if(State.entryHole<holeCount()){ State.entryHole++; render(); } }
+function setEnterRound(id){ State.activeRound=id; State.entrySide=null; State.entryHole=1; render(false); }
+function setSide(id){ State.entrySide=id; State.entryHole=1; render(false); }
+function setHole(h){ State.entryHole=h; render(false); }
+function nextHole(){ if(State.entryHole<holeCount()){ State.entryHole++; render(false); } }
 
 let saveTimer=null;
 function wireEntry(){
@@ -676,7 +705,7 @@ function wireEntry(){
   if(plus) plus.onclick=()=>{ val=Math.min(15,val+1); paint(); queueSave(val); };
   if(minus) minus.onclick=()=>{ val=Math.max(1,val-1); paint(); queueSave(val); };
   window.setStroke=(v)=>{ val=v; paint(); queueSave(v); };
-  window.clearHole=()=>{ saveHole(null); };
+  window.clearHole=()=>{ val=par; paint(); saveHole(null); };
 }
 function queueSave(v){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>saveHole(v), 350); }
 async function saveHole(v){
@@ -689,7 +718,22 @@ async function saveHole(v){
   card.updatedAt=Date.now();
   State.cards[key]=card;
   await Store.set(key,card);
-  if(State.view==='enter') render();
+  if(State.view==='enter') updateEntryAfterSave(card);
+}
+function updateEntryAfterSave(card){
+  const has=card.holes?.[State.entryHole]!=null;
+  const btn=document.getElementById('hole-'+State.entryHole);
+  if(btn){
+    btn.classList.toggle('done',has);
+    let dot=btn.querySelector('.dot');
+    if(has && !dot){ dot=document.createElement('span'); dot.className='dot'; btn.appendChild(dot); }
+    if(!has && dot){ dot.remove(); }
+  }
+  const n=holeCount(), g=grossTotal(card)||0, thru=holesPlayed(card);
+  const tot=document.getElementById('entryTotal');
+  if(tot) tot.innerHTML=`Total ${g} <span style="color:var(--text-dim);font-weight:500">(${thru}/${n})</span>`;
+  const eb=document.getElementById('enteredBy');
+  if(eb) eb.textContent=card.enteredBy?`Last saved by ${card.enteredBy}`:'Not started';
 }
 
 /* ============================================================
@@ -724,8 +768,8 @@ function viewRoster(){
     const cap=roster.find(p=>p.isCaptain);
     const rows=roster.map(p=>`<div class="roster-item">
       <div class="av">${avatarOf(p.id)}</div>
-      <div class="info"><b>${esc(p.name)}</b><span>Handicap ${p.hcp??'—'}</span></div>
-      ${p.isCaptain?'<span class="tag">Captain</span>':''}
+      <div class="info"><b>${esc(p.name)}</b>${p.isCaptain?'<span>Captain</span>':''}</div>
+      <div class="hcp"><b>${p.hcp??'—'}</b><span>HCP</span></div>
     </div>`).join('') || '<div class="muted">No players assigned</div>';
     return `<div class="card">
       <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
@@ -735,7 +779,7 @@ function viewRoster(){
       </div>${rows}</div>`;
   }).join('');
   const unassigned=players.filter(p=>!p.teamId);
-  const un=unassigned.length?`<div class="card"><div class="eyebrow">Not on a team</div>${unassigned.map(p=>`<div class="roster-item"><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b></div></div>`).join('')}</div>`:'';
+  const un=unassigned.length?`<div class="card"><div class="eyebrow">Not on a team</div>${unassigned.map(p=>`<div class="roster-item"><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b></div><div class="hcp"><b>${p.hcp??'—'}</b><span>HCP</span></div></div>`).join('')}</div>`:'';
   return `<div class="eyebrow">The Field · ${players.length} players</div>${blocks}${un}`;
 }
 
@@ -771,7 +815,7 @@ function viewMore(){
    ============================================================ */
 function openAdmin(){
   if(State.adminAuthed) return renderAdmin();
-  showModal(`<div class="modal-h"><h2>Admin PIN</h2><p class="muted" style="margin:4px 0 0">Ask the trip organizer. Default is 0605.</p></div>
+  showModal(`<div class="modal-h"><h2>Admin PIN</h2><p class="muted" style="margin:4px 0 0">Enter the organizer's PIN to manage the trip.</p></div>
     <div class="modal-b">
       <div class="field"><input id="pinInput" type="tel" inputmode="numeric" placeholder="••••" style="text-align:center;font-size:24px;letter-spacing:.3em"/></div>
       <button class="btn gold" onclick="checkPin()">Enter</button>
@@ -917,7 +961,7 @@ async function resetScores(){
 (async function boot(){
   await loadAll();
   updateMeChip();
-  render();
+  render(true);
   startPoll();
 })();
 </script>
