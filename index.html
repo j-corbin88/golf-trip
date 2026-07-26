@@ -168,6 +168,22 @@ input,select{font-family:inherit;font-size:16px}
 .mstatus b{font-size:13px;font-weight:600}
 .mstatus .pre{color:var(--text-dim)}
 .pairsel{width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:#fff;margin-bottom:5px;font-size:14px}
+.seg-toggle{display:flex;background:rgba(255,255,255,.06);border-radius:999px;padding:3px;margin-bottom:14px;gap:3px}
+.seg-toggle button{flex:1;padding:8px;border-radius:999px;font-size:13px;font-weight:600;color:rgba(237,231,214,.6)}
+.seg-toggle button.on{background:var(--gold);color:var(--ink)}
+.draft-board{display:flex;gap:10px}
+.draft-col{flex:1;background:var(--paper);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);border:2px solid transparent;min-width:0}
+.draft-col.on{border-color:var(--tc)}
+.draft-col-h{color:#fff;font-family:'Oswald';font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:.03em;padding:8px 6px;text-align:center;line-height:1.2}
+.draft-pick{display:flex;align-items:center;gap:6px;padding:7px 8px;border-bottom:1px solid var(--line);font-size:13px}
+.draft-pick:last-child{border-bottom:none}
+.draft-pick .dp-av{font-size:16px;flex:none}
+.draft-pick .dp-nm{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.draft-pick .dp-n{font-family:'Oswald';font-size:11px;color:var(--text-dim);flex:none}
+.draft-pool{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.draft-pickbtn{display:flex;align-items:center;gap:6px;background:var(--paper2);border:1px solid var(--line);border-radius:9px;padding:9px;font-size:13px;font-weight:600;text-align:left;color:var(--text)}
+.draft-pickbtn small{margin-left:auto;color:var(--text-dim);font-family:'Roboto Mono'}
+.onclock-card{text-align:center;border-radius:14px;padding:14px;margin-bottom:12px;background:var(--paper);box-shadow:var(--shadow)}
 </style>
 </head>
 <body>
@@ -180,9 +196,12 @@ input,select{font-family:inherit;font-size:16px}
       <small id="tripSub">Myrtle Beach · Oct 22–25</small>
     </div>
   </div>
-  <button class="me-chip" id="meChip" onclick="openIdentity()">
-    <span class="av" id="meAv">＋</span><span id="meName">Sign in</span>
-  </button>
+  <div style="display:flex;align-items:center;gap:9px">
+    <span id="syncDot" title="Synced" style="width:9px;height:9px;border-radius:50%;background:#5fce8f;flex:none;transition:background .3s"></span>
+    <button class="me-chip" id="meChip" onclick="openIdentity()">
+      <span class="av" id="meAv">＋</span><span id="meName">Sign in</span>
+    </button>
+  </div>
 </div>
 
 <div class="screen" id="screen"></div>
@@ -202,11 +221,16 @@ input,select{font-family:inherit;font-size:16px}
 const Store = (() => {
   const API = '/api/store';
   const NS = 'mbg:';
+  const OUTBOX = 'mbg-outbox';
   const mem = new Map();
-  let online = null; // null=unknown, true/false once probed
+  let connected = true;       // did the last network attempt succeed?
+  let everConnected = false;  // have we ever reached the server at all?
+  const subs = [];
 
+  // ---- local cache (survives reloads; falls back to memory if storage blocked) ----
   const lsGet = (k) => { try { const v = localStorage.getItem(NS+k); return v==null?null:JSON.parse(v); } catch(e){ return mem.has(k)?mem.get(k):null; } };
   const lsSet = (k,v) => { try { localStorage.setItem(NS+k, JSON.stringify(v)); } catch(e){ mem.set(k,v); } };
+  const lsDel = (k) => { try { localStorage.removeItem(NS+k); } catch(e){ mem.delete(k); } };
   const lsList = (p) => {
     const out={};
     try { for(let i=0;i<localStorage.length;i++){ const key=localStorage.key(i); if(key.startsWith(NS+p)) out[key.slice(NS.length)]=JSON.parse(localStorage.getItem(key)); } }
@@ -214,24 +238,61 @@ const Store = (() => {
     return out;
   };
 
+  // ---- outbox: writes not yet confirmed on the server (persisted, coalesced per key) ----
+  const loadOutbox = () => { try { const raw=localStorage.getItem(OUTBOX); return raw?new Map(Object.entries(JSON.parse(raw))):new Map(); } catch(e){ return new Map(); } };
+  const outbox = loadOutbox();
+  const saveOutbox = () => { try { localStorage.setItem(OUTBOX, JSON.stringify(Object.fromEntries(outbox))); } catch(e){} };
+
+  const status = () => ({ connected, everConnected, pending: outbox.size });
+  const notify = () => { const s=status(); subs.forEach(f=>{ try{ f(s); }catch(e){} }); };
+  const ok = () => { connected=true; everConnected=true; };
+  const fail = () => { connected=false; };
+
+  async function sGet(key){ const r=await fetch(`${API}?action=get&key=${encodeURIComponent(key)}`); if(!r.ok) throw 0; const j=await r.json(); if(!j.ok) throw 0; return j.data ?? null; }
+  async function sList(prefix){ const r=await fetch(`${API}?action=list&prefix=${encodeURIComponent(prefix)}`); if(!r.ok) throw 0; const j=await r.json(); if(!j.ok) throw 0; return j.data||{}; }
+  async function sSet(key,value){ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'set',key,value})}); if(!r.ok) throw 0; await r.json(); }
+  async function sDel(key){ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'del',key})}); if(!r.ok) throw 0; await r.json(); }
+
+  const pendingVal = (key)=>{ const e=outbox.get(key); return e ? (e.op==='del'?null:e.value) : undefined; };
+
+  async function flush(){
+    if(!outbox.size) return;
+    for(const [key,entry] of [...outbox]){
+      try{ if(entry.op==='del') await sDel(key); else await sSet(key, entry.value); outbox.delete(key); ok(); }
+      catch(e){ fail(); break; }   // network still down — keep the rest queued, retry next cycle
+    }
+    saveOutbox(); notify();
+  }
+
   return {
-    get online(){ return online===true; },
+    onStatus(f){ subs.push(f); },
+    status,
+    get online(){ return connected && everConnected; },
+    get everConnected(){ return everConnected; },
+    get pending(){ return outbox.size; },
     async get(key){
-      if(online!==false){ try{ const r=await fetch(`${API}?action=get&key=${encodeURIComponent(key)}`); const j=await r.json(); online=true; return j.data ?? null; }catch(e){ online=false; } }
-      return lsGet(key);
-    },
-    async set(key,value){
-      if(online!==false){ try{ const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'set',key,value})}); await r.json(); online=true; return; }catch(e){ online=false; } }
-      lsSet(key,value);
-    },
-    async del(key){
-      if(online!==false){ try{ await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'del',key})}); online=true; return; }catch(e){ online=false; } }
-      const full=NS+key; try{ localStorage.removeItem(full); }catch(e){ mem.delete(key); }
+      try{ const d=await sGet(key); ok(); if(d!=null) lsSet(key,d); notify(); const p=pendingVal(key); return p!==undefined?p:d; }
+      catch(e){ fail(); notify(); const p=pendingVal(key); return p!==undefined?p:lsGet(key); }
     },
     async list(prefix){
-      if(online!==false){ try{ const r=await fetch(`${API}?action=list&prefix=${encodeURIComponent(prefix)}`); const j=await r.json(); online=true; return j.data||{}; }catch(e){ online=false; } }
-      return lsList(prefix);
-    }
+      let base;
+      try{ base=await sList(prefix); ok(); Object.entries(base).forEach(([k,v])=>lsSet(k,v)); }
+      catch(e){ fail(); base=lsList(prefix); }
+      for(const [k,entry] of outbox){ if(k.startsWith(prefix)){ if(entry.op==='del') delete base[k]; else base[k]=entry.value; } }
+      notify();
+      return base;
+    },
+    async set(key,value){
+      lsSet(key,value); outbox.set(key,{op:'set',value}); saveOutbox(); notify();
+      try{ await sSet(key,value); outbox.delete(key); saveOutbox(); ok(); notify(); }
+      catch(e){ fail(); notify(); }    // stays queued; flush() retries
+    },
+    async del(key){
+      lsDel(key); outbox.set(key,{op:'del'}); saveOutbox(); notify();
+      try{ await sDel(key); outbox.delete(key); saveOutbox(); ok(); notify(); }
+      catch(e){ fail(); notify(); }
+    },
+    flush,
   };
 })();
 
@@ -243,10 +304,12 @@ const Device = {
 
 /* ---------- Formats ---------- */
 const FORMATS = {
-  singles:   { label:'Singles',      side:'player', blurb:'Every player plays their own ball. Head-to-head match play, one point per match.' },
-  betterball:{ label:'Better Ball',  side:'player', blurb:'Partners each play their own ball; the team counts the lower net score on each hole.' },
-  shramble:  { label:'Shramble',     side:'player', blurb:'Team plays the best drive, then everyone plays their own ball in from there.' },
-  scramble:  { label:'Scramble',     side:'group',  blurb:'Team plays one ball — best shot every time. One score per group, per hole.' },
+  singles:   { label:'Singles',      side:'player', scoring:'match',     perSide:1, blurb:'Every player plays their own ball. Head-to-head match play, one point per match.' },
+  foursomes: { label:'Foursomes',    side:'group',  scoring:'match',     perSide:2, blurb:'Partners alternate shots on one ball. 2-v-2 match play, one score per side.' },
+  betterball:{ label:'Better Ball',  side:'player', scoring:'match',     perSide:2, blurb:'Partners each play their own ball; the team counts the lower net score on each hole.' },
+  shramble:  { label:'Shramble',     side:'player', scoring:'match',     perSide:2, blurb:'Team plays the best drive, then everyone plays their own ball in from there.' },
+  scramble:  { label:'Scramble',     side:'group',  scoring:'match',     perSide:2, blurb:'Team plays one ball — best shot every time. One score per side, per hole.' },
+  teamtotal: { label:'Team Total',   side:'player', scoring:'aggregate', perSide:1, blurb:'Everyone plays their own ball; the team with the lower combined net wins the segment.' },
 };
 
 const AVATARS = ['⛳','🏌️','🏆','🎯','🦅','🐦','🍺','🥃','🚌','🕶️','🧢','🐐','🦈','🐊','🐅','🐯','🦍','🦏','🐺','🦁','🎩','👑','🃏','🎣','🐷','🦌','🍔','🌭','🏴‍☠️','⚡','🔥','💣','🎸','🎲','🚀','🛥️','🌊','🏖️','☕','🥩'];
@@ -257,10 +320,25 @@ const TRIP_ROSTER = [
   'Andrew Eby','Jordan Corbin','Julian Maskeroni','Brett Mastropieri','Patrick Budd',
   'Justin McGrath','Pat Greenwell','Nick Hammond','Bob Mayo','Joe Fucigna','Guest 16 (TBD)'
 ];
+// Handicaps from the commissioner (by roster id). Applied only where a player
+// has no handicap yet; a player's own self-entered index always wins.
+const HANDICAP_PLAN = {
+  p0:12.0,   // Eric Noto
+  p1:13.2,   // Andrew Smith ("Smitty")
+  p2:15.7,   // John Schmeer
+  p3:11.6,   // Chris Hillis
+  p4:11.7,   // Devin Velnoskey
+  p6:36.9,   // Jordan Corbin
+  p7:8.4,    // Julian Maskeroni ("Juls")
+  p9:16.6,   // Patrick Budd
+  p11:8.7,   // Pat Greenwell
+  p13:18.6,  // Bob Mayo
+  p14:3.8,   // Joe Fucigna ("Joe F")
+};
 const DEFAULT_CONFIG = () => ({
   settings:{
     tripName:'The Cup', tripSub:'True Blue Resort · Oct 22–25', adminPin:'0605', holeCount:18,
-    resort:'True Blue Resort, Pawleys Island, SC',
+    resort:'The Villas at True Blue · Pawleys Island, SC',
     checkIn:'Check in at Litchfield Beach & Golf Resort · 14276 Ocean Highway, Pawleys Island, SC 29585',
     bookingRef:'US58057',
     scrambleHcp:'low',
@@ -285,11 +363,12 @@ const DEFAULT_CONFIG = () => ({
   ],
   rounds:[
     {id:'r1', dateLabel:'Thu · Oct 22', teeTime:'1:06 PM', name:'Round 1', courseId:'c1', split:false,
-     segments:[{id:'f', label:'All 18', start:1, end:18, format:'', groups:[]}]},
+     segments:[{id:'f', label:'All 18', start:1, end:18, format:'foursomes', matches:[]}]},
     {id:'r2', dateLabel:'Fri · Oct 23', teeTime:'9:12 AM', name:'Round 2', courseId:'c2', split:false,
-     segments:[{id:'f', label:'All 18', start:1, end:18, format:'', groups:[]}]},
-    {id:'r3', dateLabel:'Sat · Oct 24', teeTime:'8:24 AM', name:'Round 3', courseId:'c3', split:false,
-     segments:[{id:'f', label:'All 18', start:1, end:18, format:'', groups:[]}]},
+     segments:[{id:'f', label:'All 18', start:1, end:18, format:'scramble', matches:[]}]},
+    {id:'r3', dateLabel:'Sat · Oct 24', teeTime:'8:24 AM', name:'Round 3', courseId:'c3', split:true,
+     segments:[{id:'f', label:'Front 9', start:1, end:9, format:'teamtotal', matches:[]},
+               {id:'b', label:'Back 9', start:10, end:18, format:'singles', matches:[]}]},
   ],
 });
 
@@ -304,6 +383,7 @@ function reconcileTrip(){
   ['resort','checkIn','bookingRef','tripSub','tripName','scrambleHcp'].forEach(k=>{
     if(!cfg.settings[k] && def.settings[k]){ cfg.settings[k]=def.settings[k]; changed=true; }
   });
+  if(!/villas/i.test(cfg.settings.resort||'')){ cfg.settings.resort=def.settings.resort; changed=true; }
   if(cfg.settings.useHandicaps===undefined){ cfg.settings.useHandicaps=true; changed=true; }
   if(!cfg.settings.allowance){ cfg.settings.allowance=JSON.parse(JSON.stringify(def.settings.allowance)); changed=true; }
   cfg.courses=cfg.courses||[];
@@ -329,13 +409,22 @@ function reconcileTrip(){
     if(!r.name){ r.name=dr.name; changed=true; }
     // migrate legacy single-format rounds to the segment model
     if(!r.segments || !r.segments.length){
-      r.segments=[{id:'f', label:'All 18', start:1, end:18, format:r.format||'', groups:r.groups||[]}];
+      r.segments=[{id:'f', label:'All 18', start:1, end:18, format:r.format||'', groups:r.groups||[], matches:[]}];
       r.split=!!r.split;
       delete r.format; delete r.groups;
       changed=true;
     }
+    // adopt the commissioner's format plan ONLY for rounds not yet configured
+    const hasFmt=(r.segments||[]).some(s=>s.format);
+    if(!hasFmt && (dr.segments||[]).some(s=>s.format)){
+      r.split=dr.split; r.segments=JSON.parse(JSON.stringify(dr.segments)); changed=true;
+    }
   });
   if(!cfg.players || !cfg.players.length){ cfg.players=def.players; changed=true; }
+  // backfill commissioner handicaps where a player has none set yet
+  (cfg.players||[]).forEach(p=>{
+    if((p.hcp==null || p.hcp==='') && HANDICAP_PLAN[p.id]!=null){ p.hcp=HANDICAP_PLAN[p.id]; changed=true; }
+  });
   return changed;
 }
 
@@ -343,9 +432,11 @@ const State = {
   config:null,
   avatars:{},   // playerId -> emoji  (from avatar:* blobs)
   hcps:{},      // playerId -> handicap index (from hcp:* blobs)
+  votes:{},     // voterId -> candidate playerId (from vote:* blobs)
   cards:{},     // 'card:round:side' -> {holes,enteredBy,updatedAt}
   me:null,      // playerId
   view:'board',
+  boardMode:'matches',
   activeRound:null,
   entrySeg:null,
   entrySide:null,
@@ -417,7 +508,7 @@ function segPar(round, seg){
 
 /* ---------- Matches / pairings ---------- */
 const segMatches = (seg)=> seg?.matches || [];
-const perSideFor = (fmt)=> fmt==='singles' ? 1 : 2;
+const perSideFor = (fmt)=> FORMATS[fmt]?.perSide || (fmt==='singles'?1:2);
 const teamRoster = (teamId)=> (State.config.players||[]).filter(p=>p.teamId===teamId);
 const teamOfSide = (ids)=> ids.map(id=>player(id)?.teamId).find(Boolean) || null;
 
@@ -475,10 +566,11 @@ function editableSidesForSeg(round, seg){
 function courseHcpOf(id, c){ const idx=hcpOf(id); const ch=courseHandicap(idx,c); return ch!=null?ch:(idx!=null?Math.round(idx):0); }
 // playing handicap for an individual: course handicap x format allowance, 0 if handicaps off
 function playingCH(id, c, fmt){ if(!useHcp()) return 0; return Math.round(courseHcpOf(id,c)*allowanceFor(fmt)); }
-function sideCH(ids, c){
+function sideCH(ids, c, fmt){
   if(!useHcp()) return 0;
   const chs=ids.map(id=>courseHcpOf(id,c)).sort((a,b)=>a-b);
   if(!chs.length) return 0;
+  if(fmt==='foursomes') return Math.round(0.5*chs.reduce((a,b)=>a+b,0)); // USGA alt-shot: 50% of combined
   const method=State.config?.settings?.scrambleHcp||'low';
   if(method==='scratch') return 0;
   if(method==='avg') return Math.round(chs.reduce((a,b)=>a+b,0)/chs.length);
@@ -490,7 +582,7 @@ function computeMatch(round, seg, match){
   const isGroup=FORMATS[fmt]?.side==='group';
   let aVal, bVal;
   if(isGroup){
-    const aCH=sideCH(match.a,c), bCH=sideCH(match.b,c), low=Math.min(aCH,bCH);
+    const aCH=sideCH(match.a,c,fmt), bCH=sideCH(match.b,c,fmt), low=Math.min(aCH,bCH);
     const aStk=aCH-low, bStk=bCH-low;
     const aCard=State.cards[cardKey(round.id,seg.id,match.id+':a')];
     const bCard=State.cards[cardKey(round.id,seg.id,match.id+':b')];
@@ -542,7 +634,8 @@ function tripPoints(){
     segsOf(r).forEach(seg=>{
       if(!seg.format) return;
       const w=segWeight(seg);
-      const ms=segMatches(seg);
+      const isAgg=FORMATS[seg.format]?.scoring==='aggregate';
+      const ms=isAgg?[]:segMatches(seg);
       if(ms.length){
         ms.forEach(m=>{
           const sp=matchPointSplit(computeMatch(r,seg,m)); if(!sp) return;
@@ -581,6 +674,9 @@ async function loadAll(){
   State.hcps={};
   const hs=await Store.list('hcp:');
   Object.entries(hs).forEach(([k,v])=>{ if(v?.index!=null) State.hcps[k.split(':')[1]]=v.index; });
+  State.votes={};
+  const vs=await Store.list('vote:');
+  Object.entries(vs).forEach(([k,v])=>{ if(v?.choice) State.votes[k.split(':')[1]]=v.choice; });
   State.cards=await Store.list('card:');
   State.me=Device.get('me');
   if(!State.activeRound) State.activeRound=(cfg.rounds.find(r=>roundLive(r))||cfg.rounds[0])?.id;
@@ -589,19 +685,25 @@ async function loadAll(){
 }
 async function refresh(){
   try{
+    await Store.flush();                 // retry any queued writes first
     const avs=await Store.list('avatar:');
     State.avatars={}; Object.entries(avs).forEach(([k,v])=>{ State.avatars[k.split(':')[1]]=v?.emoji; });
     const hs=await Store.list('hcp:');
     State.hcps={}; Object.entries(hs).forEach(([k,v])=>{ if(v?.index!=null) State.hcps[k.split(':')[1]]=v.index; });
+    const vs=await Store.list('vote:');
+    State.votes={}; Object.entries(vs).forEach(([k,v])=>{ if(v?.choice) State.votes[k.split(':')[1]]=v.choice; });
     State.cards=await Store.list('card:');
     const cfg=await Store.get('config'); if(cfg){ State.config=cfg; }
-    // Only touch the screen where live data actually shows — the leaderboard.
-    // Other views hold still; their data is refreshed in State for when you open them.
+    updateSyncDot(Store.status());
     if(State.view==='board') updateBoard();
+    else if(State.view==='enter') updateSyncNote();
+    else if(State.view==='roster' && getDraft().status==='live') render(false);
   }catch(e){}
 }
 let pollTimer=null;
 function startPoll(){ clearInterval(pollTimer); pollTimer=setInterval(refresh, 5000); }
+// when the device regains connectivity, flush + refresh immediately
+if(typeof window!=='undefined'){ window.addEventListener('online', ()=>{ Store.flush().then(refresh); }); }
 
 /* ============================================================
    IDENTITY
@@ -680,14 +782,19 @@ async function confirmIdentity(pid, saveHcp){
 /* ============================================================
    MODALS
    ============================================================ */
+let _modalScroll = 0;
+let _modalRestoring = false;
 function showModal(html){
   const host=$('#modalHost');
-  const prev=host.querySelector('.modal');
-  const sc=prev?prev.scrollTop:0;                 // keep place across re-renders
   host.innerHTML=`<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
-  if(sc){ const m=host.querySelector('.modal'); if(m) m.scrollTop=sc; }
+  const m=host.querySelector('.modal');
+  if(m){
+    m.addEventListener('scroll', ()=>{ if(!_modalRestoring) _modalScroll=m.scrollTop; });
+    const restore=()=>{ _modalRestoring=true; m.scrollTop=_modalScroll; setTimeout(()=>{ _modalRestoring=false; }, 60); };
+    requestAnimationFrame(()=>{ restore(); requestAnimationFrame(restore); }); // wait for layout, twice for mobile
+  }
 }
-function closeModal(){ $('#modalHost').innerHTML=''; }
+function closeModal(){ _modalScroll=0; $('#modalHost').innerHTML=''; }
 
 /* ============================================================
    NAV + ROUTER
@@ -708,9 +815,11 @@ function go(view){ State.view=view; window.scrollTo(0,0); render(true); }
 function render(animate=false){
   updateMeChip(); renderNav();
   const s=$('#screen');
+  const y = animate ? 0 : window.scrollY;         // keep place unless navigating
   const map={board:viewBoard,enter:viewEnter,rounds:viewRounds,roster:viewRoster,more:viewMore};
   s.innerHTML=`<div class="view${animate?' anim':''}">${(map[State.view]||viewBoard)()}</div>`;
   if(State.view==='enter') wireEntry();
+  if(!animate){ window.scrollTo(0,y); requestAnimationFrame(()=>window.scrollTo(0,y)); }
 }
 
 /* ============================================================
@@ -737,9 +846,26 @@ function cupFootText(){
   const {A,B,pA,pB}=boardStats();
   return `${pA===pB?'All square':(pA>pB?A.name+' leads':B.name+' leads')} · ${liveSegCount()} of ${totalSegCount()} segments set`;
 }
+function syncState(){
+  const s=Store.status();
+  if(!s.everConnected) return { color:'#E5A823', label: s.pending? `Saved on this device · ${s.pending} waiting` : 'Preview mode — deploy to Netlify for live sync' };
+  if(s.connected && s.pending===0) return { color:'#5fce8f', label:'Live — synced across everyone\u2019s phones' };
+  if(s.pending>0) return { color:'#E5A823', label:`Syncing… ${s.pending} unsent` };
+  return { color:'#E5A823', label:'Reconnecting…' };
+}
 function statusInnerHTML(){
-  const online=Store.online;
-  return `<span class="status-dot" style="background:${online?'#5fce8f':'#E5A823'}"></span>${online?'Live — synced across everyone\u2019s phones':'Preview mode — deploy to Netlify for live sync'}`;
+  const s=syncState();
+  return `<span class="status-dot" style="background:${s.color}"></span>${s.label}`;
+}
+function updateSyncDot(){
+  const s=syncState(); const d=document.getElementById('syncDot');
+  if(d){ d.style.background=s.color; d.title=s.label; }
+}
+function updateSyncNote(){
+  const el=document.getElementById('syncNote'); if(!el) return;
+  const st=Store.status();
+  if(st.pending>0){ el.textContent=`${st.pending} score${st.pending===1?'':'s'} waiting to sync — they'll send when you're back online`; el.style.display=''; }
+  else { el.style.display='none'; }
 }
 function boardBodyHTML(){
   const cfg=State.config;
@@ -747,18 +873,66 @@ function boardBodyHTML(){
   const tabs=rounds.length? `<div class="lb-round-tab">
     ${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setRound('${r.id}')">${esc(r.name)}${r.split?' · split':''}</button>`).join('')}
   </div>`:'';
+  const toggle=rounds.length?`<div class="seg-toggle">
+    <button class="${State.boardMode!=='players'?'on':''}" onclick="setBoardMode('matches')">Matches</button>
+    <button class="${State.boardMode==='players'?'on':''}" onclick="setBoardMode('players')">Players</button>
+  </div>`:'';
   let body='';
   const active=cfg.rounds.find(r=>r.id===State.activeRound && roundLive(r)) || rounds[0];
   if(!rounds.length){
     body=`<div class="card"><div class="empty"><div class="big">🏁</div><b>No rounds live yet</b><p class="muted" style="margin-top:6px">Once the admin assigns a format to a day, standings show up here.</p></div></div>`;
+  } else if(State.boardMode==='players'){
+    body=playerBoard(active);
   } else if(active){
-    body=liveSegs(active).map(seg=> segMatches(seg).length ? segMatchBoard(active,seg) : segLeaderboard(active,seg)).join('');
+    body=liveSegs(active).map(seg=> FORMATS[seg.format]?.scoring==='aggregate' ? teamTotalBoard(active,seg) : (segMatches(seg).length ? segMatchBoard(active,seg) : segLeaderboard(active,seg))).join('');
   }
-  const banner=`<div class="banner">Match play: within each match the low handicap plays off scratch and the rest get the difference by stroke index. 1 point per match, ½ for a halve. Segments without pairings fall back to a provisional net total.</div>`;
-  return tabs+body+banner;
+  const banner= State.boardMode==='players'
+    ? `<div class="banner">Individual net across this round's holes. Scramble holes are team-only, so they don't appear here.</div>`
+    : `<div class="banner">Match play: within each match the low handicap plays off scratch and the rest get the difference by stroke index. 1 point per match, ½ for a halve. Segments without pairings fall back to a provisional net total.</div>`;
+  return tabs+toggle+body+banner;
+}
+function setBoardMode(m){ State.boardMode=m; render(false); }
+// Individual net leaderboard for a round (aggregates that round's individual-ball segments)
+function playerBoard(round){
+  const c=courseOf(round), pars=c?.pars||[];
+  const stats={};
+  segsOf(round).forEach(seg=>{
+    if(!seg.format || FORMATS[seg.format]?.side==='group') return; // skip scramble
+    (State.config.players||[]).forEach(p=>{
+      const card=State.cards[cardKey(round.id,seg.id,p.id)];
+      const g=grossTotal(card); if(g==null) return;
+      const n=netForCard(p.id,card,false,round,seg.format);
+      const s=stats[p.id]||(stats[p.id]={gross:0,net:0,thru:0,parPlayed:0});
+      s.gross+=g; s.net+=(n==null?g:n); s.thru+=holesPlayed(card);
+      Object.keys(card.holes).forEach(h=>{ if(card.holes[h]!=null) s.parPlayed+=pars[h-1]||0; });
+    });
+  });
+  const rows=Object.entries(stats).map(([pid,s])=>({pid,...s})).sort((a,b)=>a.net-b.net);
+  if(!rows.length){
+    return `<div class="card"><div class="empty"><div class="big">🏌️</div><b>No individual scores yet</b><p class="muted" style="margin-top:6px">Singles, better ball, and shramble show up here. Scramble is team-only.</p></div></div>`;
+  }
+  const body=rows.map((r,i)=>{
+    const p=player(r.pid), t=team(p?.teamId);
+    const relN=Math.round(r.gross-r.parPlayed);
+    const cls=relN<0?'under':relN>0?'over':'even';
+    const relTxt=relN===0?'E':(relN>0?'+'+relN:relN);
+    return `<div class="row">
+      <div style="width:18px;text-align:center;font-family:'Oswald';font-weight:700;color:var(--text-dim)">${i+1}</div>
+      <div class="teamdot" style="background:${t?.color||'#999'}"></div>
+      <div class="av" style="border-color:${t?.color||'transparent'}">${avatarOf(r.pid)}</div>
+      <div class="nm"><b>${esc(p?.name||'—')}</b><span>Thru ${r.thru} · Idx ${hcpOf(r.pid)??'—'}</span></div>
+      <div class="rel ${cls}">${relTxt}</div>
+      <div class="sc">${Math.round(r.net)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="card"><div class="eyebrow" style="color:var(--gold)">${esc(round.name)} · Individual net</div>${body}
+    <div class="muted" style="margin-top:10px;font-size:11px">Net shown big · score-to-par at right.</div></div>`;
 }
 function viewBoard(){
+  const draftLive=getDraft().status==='live';
+  const draftBanner=draftLive?`<div class="banner" style="background:rgba(30,95,168,.16);border-color:rgba(30,95,168,.5);color:#1E5FA8;cursor:pointer" onclick="go('roster')">🏈 The draft is live — tap to watch the board</div>`:'';
   return `${cupHTML()}
+  ${draftBanner}
   <div id="syncStatus" style="margin:0 2px 10px;font-size:11px;color:rgba(237,231,214,.55)">${statusInnerHTML()}</div>
   <div id="boardBody">${boardBodyHTML()}</div>`;
 }
@@ -780,6 +954,25 @@ function updateBoard(){
 function fmtPts(n){ return Number.isInteger(n)?n:n.toFixed(1); }
 function setRound(id){ State.activeRound=id; render(false); }
 
+function teamTotalBoard(round,seg){
+  const c=courseOf(round);
+  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · Team Total · ${esc(c?.name||'Course TBD')}</div>`;
+  const tn=segTeamNet(round,seg);
+  const teams=(State.config.teams||[]).map(t=>({t, net:tn[t.id]?.net, played:tn[t.id]?.played}));
+  const playedTeams=teams.filter(x=>x.played);
+  const low=playedTeams.length?Math.min(...playedTeams.map(x=>x.net)):null;
+  const rows=teams.map(x=>{
+    const lead = x.played && low!=null && x.net===low && playedTeams.length>1;
+    return `<div class="row">
+      <div class="teamdot" style="background:${x.t.color}"></div>
+      <div class="nm"><b style="${lead?'color:'+x.t.color:''}">${esc(x.t.name)}</b><span>${x.played?'combined net':'no scores yet'}</span></div>
+      <div class="sc">${x.played?Math.round(x.net):'—'}</div>
+    </div>`;
+  }).join('');
+  return `<div class="card">${head}${rows}
+    <div class="muted" style="margin-top:8px;font-size:11px">Lower combined net wins the segment. Every player enters their own ball.</div>
+  </div>`;
+}
 function segMatchBoard(round,seg){
   const c=courseOf(round);
   const [TA,TB]=State.config.teams;
@@ -902,6 +1095,7 @@ function viewEnter(){
       <button onclick="nextHole()">Next ›</button>
     </div>
     <div class="entered-by" id="enteredBy">${enteredBy}</div>
+    <div id="syncNote" style="display:none;text-align:center;font-size:11px;color:#9a7a10;margin-top:6px"></div>
   </div>
   `;
 }
@@ -962,6 +1156,7 @@ function updateEntryAfterSave(card){
   if(tot) tot.innerHTML=`Total ${g} <span style="color:var(--text-dim);font-weight:500">(${thru}/${segHoleCount})</span>`;
   const eb=document.getElementById('enteredBy');
   if(eb) eb.textContent=card.enteredBy?`Last saved by ${card.enteredBy}`:'Not started';
+  updateSyncNote();
 }
 
 /* ============================================================
@@ -996,6 +1191,17 @@ function viewRounds(){
 function viewRoster(){
   const teams=State.config.teams, players=State.config.players;
   if(!players.length) return `<div class="card"><div class="empty"><div class="big">🧑‍🤝‍🧑</div><b>No players yet</b><p class="muted" style="margin-top:6px">Add the crew in Admin.</p><button class="btn gold" style="margin-top:14px" onclick="go('more')">Go to Admin</button></div></div>`;
+  const d=getDraft();
+  if(d.status==='live'){
+    const onClock=teamOnClock(d), t=team(onClock);
+    return `<div class="eyebrow">The Draft · live</div>
+      <div class="onclock-card" ${t?`style="border:2px solid ${t.color}"`:''}>
+        <div class="eyebrow" style="color:${t?.color||'var(--gold)'}">On the clock · pick ${d.picks.length+1}</div>
+        <b style="font-size:22px">${esc(t?.name||'—')}</b>
+      </div>
+      ${draftBoardHTML(d)}
+      <div class="muted" style="text-align:center;margin-top:10px">Updates live as the commissioner makes picks.</div>`;
+  }
   const blocks=teams.map(t=>{
     const roster=players.filter(p=>p.teamId===t.id);
     const cap=roster.find(p=>p.isCaptain);
@@ -1013,7 +1219,17 @@ function viewRoster(){
   }).join('');
   const unassigned=players.filter(p=>!p.teamId);
   const un=unassigned.length?`<div class="card"><div class="eyebrow">Not on a team</div>${unassigned.map(p=>`<div class="roster-item"><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b></div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`).join('')}</div>`:'';
-  return `<div class="eyebrow">The Field · ${players.length} players</div>${blocks}${un}`;
+  const mv=myVote();
+  const voteCard = (d.status==='none') ? `<div class="card">
+    <div class="eyebrow">Captain Vote</div>
+    <h3 style="font-size:18px;text-transform:uppercase;margin-bottom:6px">Who should captain?</h3>
+    ${State.me
+      ? (mv ? `<p class="muted" style="margin-bottom:10px">You voted for <b style="color:var(--text)">${esc(player(mv)?.name||'')}</b>.</p><button class="btn ghost" onclick="renderVoteModal()">Change my vote</button>`
+            : `<button class="btn gold" onclick="renderVoteModal()">Cast your vote</button>`)
+      : `<button class="btn gold" onclick="openIdentity()">Sign in to vote</button>`}
+    <p class="muted" style="margin-top:10px;font-size:11px">${voteCount()} of ${players.length} have voted · the commissioner tallies the results.</p>
+  </div>` : '';
+  return `${voteCard}<div class="eyebrow">The Field · ${players.length} players</div>${blocks}${un}`;
 }
 
 /* ============================================================
@@ -1041,6 +1257,169 @@ function viewMore(){
   </div>
   <div class="muted" style="text-align:center;font-size:11px">The Cup · Myrtle Beach 2026 · built for the Blakefield ’06 crew</div>
   `;
+}
+
+/* ============================================================
+   CAPTAIN VOTE (everyone votes; each sees only their own vote;
+   full breakdown is admin-only and can seed the draft)
+   ============================================================ */
+function myVote(){ return State.me ? State.votes[State.me] : null; }
+function voteTally(){ const t={}; Object.values(State.votes).forEach(c=>{ if(c) t[c]=(t[c]||0)+1; }); return t; }
+function voteTopN(n){ return Object.entries(voteTally()).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([id])=>id); }
+function voteCount(){ return Object.keys(State.votes).filter(k=>State.votes[k]).length; }
+async function castVote(choiceId){
+  if(!State.me) return;
+  State.votes[State.me]=choiceId;
+  await Store.set('vote:'+State.me,{choice:choiceId, at:Date.now()});
+  closeModal(); render();
+}
+function renderVoteModal(){
+  if(!State.me){ openIdentity(); return; }
+  const mine=myVote();
+  const rows=(State.config.players||[]).map(p=>`<button onclick="castVote('${p.id}')" style="display:flex;align-items:center;gap:9px;padding:11px;border-radius:10px;background:${p.id===mine?'var(--ink)':'#fff'};color:${p.id===mine?'var(--light)':'var(--text)'};border:1px solid var(--line);text-align:left;font-weight:600;width:100%;margin-bottom:7px">
+    <span style="width:26px;height:26px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:15px">${avatarOf(p.id)}</span>
+    <span style="flex:1">${esc(p.name)}</span>${p.id===mine?'<span class="tag" style="background:var(--gold);color:var(--ink)">Your pick</span>':''}
+  </button>`).join('');
+  showModal(`<div class="modal-h"><h2>Vote for a captain</h2><p class="muted" style="margin:4px 0 0">Your vote is private — only the commissioner sees the tally. You can change it anytime.</p></div>
+    <div class="modal-b">${rows}
+      <button class="btn ghost" style="margin-top:4px" onclick="closeModal()">Done</button>
+    </div>`);
+}
+function renderVoteResults(){
+  const tally=voteTally();
+  const ranked=Object.entries(tally).sort((a,b)=>b[1]-a[1]);
+  const top2=new Set(ranked.slice(0,2).map(([id])=>id));
+  const total=voteCount(), roster=(State.config.players||[]).length;
+  const tallyRows = ranked.length ? ranked.map(([pid,n])=>{
+    const voters=Object.entries(State.votes).filter(([,c])=>c===pid).map(([vid])=>player(vid)?.name?.split(' ')[0]||'?').join(', ');
+    return `<div class="roster-item">
+      <div class="av">${avatarOf(pid)}</div>
+      <div class="info"><b>${esc(player(pid)?.name||'?')}${top2.has(pid)?' ⭐':''}</b><span>${esc(voters)}</span></div>
+      <div class="hcp"><b>${n}</b><span>VOTES</span></div>
+    </div>`;
+  }).join('') : '<div class="muted">No votes yet.</div>';
+  const nonVoters=(State.config.players||[]).filter(p=>!State.votes[p.id]).map(p=>p.name.split(' ')[0]);
+  showModal(`
+    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Captain Vote</h2><button class="btn sm ghost" onclick="renderAdmin()">Back</button></div>
+    <div class="modal-b">
+      <div class="muted" style="margin-bottom:10px">${total} of ${roster} have voted. ⭐ marks the current top two.</div>
+      <button class="btn ghost sm" style="width:100%;margin-bottom:12px" onclick="refresh().then(renderVoteResults)">↻ Refresh results</button>
+      <div class="eyebrow">Tally · who voted for whom</div>
+      <div style="margin-bottom:12px">${tallyRows}</div>
+      ${nonVoters.length?`<div class="muted" style="font-size:12px;margin-bottom:12px"><b>Haven't voted:</b> ${esc(nonVoters.join(', '))}</div>`:''}
+      ${ranked.length>=2?`<button class="btn gold" onclick="startDraftFromVote()">Make top two captains &amp; start draft</button>`:''}
+    </div>`);
+}
+function startDraftFromVote(){
+  const [a,b]=voteTopN(2);
+  renderDraftSetup();
+  setTimeout(()=>{ const A=$('#capA'), B=$('#capB'); if(A&&a)A.value=a; if(B&&b)B.value=b; }, 0);
+}
+
+/* ============================================================
+   DRAFT (commissioner-run snake draft, live board for everyone)
+   ============================================================ */
+function getDraft(){ return State.config.draft || {status:'none', firstTeam:(State.config.teams[0]||{}).id, captains:{}, picks:[]}; }
+function draftPair(d){ const ids=State.config.teams.map(t=>t.id); return d.firstTeam===ids[1]?[ids[1],ids[0]]:[ids[0],ids[1]]; }
+function draftPickedIds(d){ return new Set([...Object.values(d.captains||{}), ...d.picks.map(p=>p.playerId)]); }
+function draftPool(d){ const picked=draftPickedIds(d); return (State.config.players||[]).filter(p=>!picked.has(p.id)); }
+function teamOnClock(d){
+  if(!draftPool(d).length) return null;
+  const [a,b]=draftPair(d); const i=d.picks.length; const round=Math.floor(i/2);
+  const pair=round%2===0?[a,b]:[b,a]; return pair[i%2];
+}
+function draftComplete(d){ return d.status!=='none' && draftPool(d).length===0; }
+
+async function saveDraft(d){ State.config.draft=d; await saveConfig(); }
+async function startDraft(capA, capB, firstTeam){
+  const ids=State.config.teams.map(t=>t.id);
+  State.config.players.forEach(p=>{ p.teamId=''; p.isCaptain=false; });
+  const A=player(capA), B=player(capB);
+  if(A){ A.teamId=ids[0]; A.isCaptain=true; }
+  if(B){ B.teamId=ids[1]; B.isCaptain=true; }
+  await saveDraft({ status:'live', firstTeam, captains:{[ids[0]]:capA,[ids[1]]:capB}, picks:[] });
+  renderDraftRunner();
+}
+async function makePick(pid){
+  const d=getDraft(); if(d.status!=='live') return;
+  const tm=teamOnClock(d); if(!tm) return;
+  const p=player(pid); if(p) p.teamId=tm;
+  d.picks.push({playerId:pid, teamId:tm});
+  if(draftPool(d).length===0) d.status='done';
+  await saveDraft(d); renderDraftRunner();
+}
+async function undoPick(){
+  const d=getDraft(); if(!d.picks.length) return;
+  const last=d.picks.pop(); const p=player(last.playerId); if(p) p.teamId='';
+  d.status='live'; await saveDraft(d); renderDraftRunner();
+}
+async function resetDraft(){
+  State.config.players.forEach(p=>{ p.teamId=''; p.isCaptain=false; });
+  await saveDraft({status:'none', firstTeam:State.config.teams[0].id, captains:{}, picks:[]});
+  renderDraftSetup();
+}
+async function finishDraft(){ const d=getDraft(); if(d.status==='live'&&draftComplete(d)) d.status='done'; await saveDraft(d); closeModal(); go('roster'); }
+
+function draftBoardHTML(d){
+  const onClock=teamOnClock(d);
+  const col=(t)=>{
+    const cap=d.captains?.[t.id];
+    const order=[cap, ...d.picks.filter(p=>p.teamId===t.id).map(p=>p.playerId)].filter(Boolean);
+    const rows=order.map((pid,idx)=>`<div class="draft-pick"><span class="dp-av">${avatarOf(pid)}</span><span class="dp-nm">${esc(player(pid)?.name||'?')}</span>${idx===0?'<span class="tag">C</span>':`<span class="dp-n">${idx}</span>`}</div>`).join('');
+    const clock=onClock===t.id;
+    return `<div class="draft-col ${clock?'on':''}" style="--tc:${t.color}"><div class="draft-col-h" style="background:${t.color}">${esc(t.name)}${clock?' · on the clock':''}</div>${rows||'<div class="muted" style="padding:8px">—</div>'}</div>`;
+  };
+  return `<div class="draft-board">${State.config.teams.map(col).join('')}</div>`;
+}
+
+function renderDraftSetup(){
+  const d=getDraft();
+  const [TA,TB]=State.config.teams;
+  const roster=State.config.players||[];
+  const opts=(sel)=>['<option value="">— pick —</option>',...roster.map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)}</option>`)].join('');
+  showModal(`
+    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Run the Draft</h2><button class="btn sm ghost" onclick="renderAdmin()">Back</button></div>
+    <div class="modal-b">
+      ${d.status==='live'||d.picks.length?`<div class="banner">A draft is in progress (${d.picks.length} pick${d.picks.length===1?'':'s'}).</div>
+        <button class="btn" onclick="renderDraftRunner()">Continue draft</button>
+        <button class="btn ghost" style="margin-top:8px;color:var(--red)" onclick="resetDraft()">Reset &amp; start over</button>
+        <div class="divider"></div><div class="eyebrow">Or set up fresh</div>`:''}
+      <p class="muted" style="margin-bottom:12px">Pick the two captains and who's on the clock first. Everyone else watches the board fill in live on the Roster tab as you make picks.</p>
+      <div class="field"><label>${esc(TA.name)} captain</label><select id="capA">${opts(d.captains?.[TA.id])}</select></div>
+      <div class="field"><label>${esc(TB.name)} captain</label><select id="capB">${opts(d.captains?.[TB.id])}</select></div>
+      <div class="field"><label>First pick</label><select id="firstT">
+        <option value="${TA.id}">${esc(TA.name)}</option><option value="${TB.id}">${esc(TB.name)}</option>
+      </select></div>
+      <button class="btn gold" onclick="doStartDraft()">Start snake draft</button>
+      <div id="draftErr" class="muted" style="color:var(--red);text-align:center;margin-top:8px"></div>
+    </div>`);
+}
+function doStartDraft(){
+  const a=$('#capA').value, b=$('#capB').value, f=$('#firstT').value;
+  if(!a||!b){ $('#draftErr').textContent='Choose both captains.'; return; }
+  if(a===b){ $('#draftErr').textContent='Captains must be two different people.'; return; }
+  startDraft(a,b,f);
+}
+function renderDraftRunner(){
+  const d=getDraft();
+  if(d.status==='none') return renderDraftSetup();
+  const onClock=teamOnClock(d), done=draftComplete(d);
+  const t=team(onClock);
+  const pool=draftPool(d).slice().sort((a,b)=>(hcpOf(a.id)??999)-(hcpOf(b.id)??999));
+  const poolBtns=pool.map(p=>`<button class="draft-pickbtn" onclick="makePick('${p.id}')"><span>${avatarOf(p.id)}</span> ${esc(p.name)} <small>${hcpOf(p.id)??'—'}</small></button>`).join('');
+  const capName=onClock?(player(d.captains[onClock])?.name?.split(' ')[0]||''):'';
+  showModal(`
+    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Draft</h2><button class="btn sm ghost" onclick="finishDraft()">${done?'Finish':'Close'}</button></div>
+    <div class="modal-b">
+      ${done
+        ? `<div class="onclock-card"><div class="eyebrow" style="color:var(--gold)">Draft complete</div><b style="font-size:20px">Teams are set 🏆</b></div>`
+        : `<div class="onclock-card" style="border:2px solid ${t?.color}"><div class="eyebrow" style="color:${t?.color}">On the clock · pick ${d.picks.length+1}</div><b style="font-size:22px">${esc(t?.name||'')}</b><div class="muted">${capName?esc(capName)+' picking':''}</div></div>
+           <div class="eyebrow">Available (${pool.length})</div><div class="draft-pool">${poolBtns}</div>`}
+      ${d.picks.length?`<button class="btn ghost sm" style="margin:10px 0" onclick="undoPick()">↩ Undo last pick (${esc(player(d.picks[d.picks.length-1].playerId)?.name?.split(' ')[0]||'')})</button>`:''}
+      <div class="divider"></div>
+      <div class="eyebrow">Board</div>
+      ${draftBoardHTML(d)}
+    </div>`);
 }
 
 /* ============================================================
@@ -1079,8 +1458,10 @@ function renderAdmin(){
         <label>${r.split?esc(seg.label)+' format':'Format'}</label>
         <select onchange="setSegFormat('${r.id}','${seg.id}',this.value)">${fmtOptions(seg.format)}</select>
         ${seg.format?`<div style="display:flex;gap:8px;margin-top:6px;align-items:center">
-          <button class="btn ghost sm" style="flex:1" onclick="renderPairings('${r.id}','${seg.id}')">Pairings · ${segMatches(seg).length} match${segMatches(seg).length===1?'':'es'}</button>
-          <div style="display:flex;align-items:center;gap:5px"><span style="font-size:11px;color:var(--text-dim)">pts/match</span><input type="number" min="0" step="0.5" value="${segWeight(seg)}" onchange="setSegWeight('${r.id}','${seg.id}',this.value)" style="width:52px;padding:7px;border-radius:8px;border:1px solid var(--line);text-align:center"/></div>
+          ${FORMATS[seg.format]?.scoring==='aggregate'
+            ? `<div style="flex:1;font-size:12px;color:var(--text-dim)">Team total — no pairings needed</div>`
+            : `<button class="btn ghost sm" style="flex:1" onclick="renderPairings('${r.id}','${seg.id}')">Pairings · ${segMatches(seg).length} match${segMatches(seg).length===1?'':'es'}</button>`}
+          <div style="display:flex;align-items:center;gap:5px"><span style="font-size:11px;color:var(--text-dim)">${FORMATS[seg.format]?.scoring==='aggregate'?'pts':'pts/match'}</span><input type="number" min="0" step="0.5" value="${segWeight(seg)}" onchange="setSegWeight('${r.id}','${seg.id}',this.value)" style="width:52px;padding:7px;border-radius:8px;border:1px solid var(--line);text-align:center"/></div>
         </div>`:''}
       </div>`).join('');
     return `
@@ -1117,6 +1498,8 @@ function renderAdmin(){
           <input type="color" value="${t.color}" onchange="setTeamColor('${t.id}',this.value)" style="width:100%;height:34px;margin-top:6px;border-radius:8px;border:1px solid var(--line);background:#fff"/>
         </div>`).join('')}
       </div>
+      <button class="btn ghost" style="margin-bottom:8px" onclick="renderVoteResults()">🗳️ Captain vote results (${voteCount()} voted)</button>
+      <button class="btn" style="margin-bottom:14px" onclick="renderDraftRunner()">${getDraft().status==='live'?'▶ Continue the draft':getDraft().status==='done'?'↻ Re-run the draft':'🏈 Run the draft (snake)'}</button>
 
       <div class="eyebrow">Players &amp; handicaps</div>
       <div style="margin-bottom:8px">${playerRows}</div>
@@ -1324,9 +1707,12 @@ async function resetScores(){
    BOOT
    ============================================================ */
 (async function boot(){
+  Store.onStatus(()=>{ updateSyncDot(); if(State.view==='enter') updateSyncNote(); });
   await loadAll();
   updateMeChip();
   render(true);
+  updateSyncDot();
+  Store.flush();          // push anything left queued from a previous session
   startPoll();
 })();
 </script>
