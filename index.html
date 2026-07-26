@@ -682,7 +682,10 @@ async function confirmIdentity(pid, saveHcp){
    ============================================================ */
 function showModal(html){
   const host=$('#modalHost');
+  const prev=host.querySelector('.modal');
+  const sc=prev?prev.scrollTop:0;                 // keep place across re-renders
   host.innerHTML=`<div class="scrim" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
+  if(sc){ const m=host.querySelector('.modal'); if(m) m.scrollTop=sc; }
 }
 function closeModal(){ $('#modalHost').innerHTML=''; }
 
