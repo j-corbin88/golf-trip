@@ -81,6 +81,8 @@ input,select{font-family:inherit;font-size:16px}
 .lb-round-tab{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;padding-bottom:2px}
 .lb-round-tab button{white-space:nowrap;background:rgba(255,255,255,.06);color:var(--light);border:1px solid rgba(255,255,255,.1);padding:8px 13px;border-radius:999px;font-size:12px;font-weight:600}
 .lb-round-tab button.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
+.modal-b .lb-round-tab button{background:rgba(0,0,0,.05);color:var(--text);border-color:var(--line)}
+.modal-b .lb-round-tab button.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
 .row{display:flex;align-items:center;gap:11px;padding:10px 4px;border-bottom:1px solid var(--line)}
 .row:last-child{border-bottom:none}
 .row .av{width:34px;height:34px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:19px;flex:none;border:2px solid transparent}
@@ -187,8 +189,9 @@ input,select{font-family:inherit;font-size:16px}
 .grow.ghead{background:var(--paper2)}
 .gcell{flex:none;width:31px;display:flex;align-items:center;justify-content:center;font-family:'Oswald';font-size:12px;border-right:1px solid var(--line);color:var(--text-dim)}
 .gcell:last-of-type{border-right:none}
-.gcell.gh{flex-direction:column;font-weight:700;font-size:11px;color:var(--text);line-height:1}
+.gcell.gh{flex-direction:column;font-weight:700;font-size:11px;color:var(--text);line-height:1;justify-content:center;padding:3px 0}
 .gcell.gh span{font-size:8px;color:var(--text-dim);font-weight:500;margin-top:1px}
+.gcell.gh span.si{color:var(--gold);font-weight:700}
 .scell{background:transparent;height:36px;cursor:pointer}
 .scell.has{color:var(--text-dim);font-weight:600}
 .scell.ov.has{color:#fff;background:var(--gold);font-weight:800}
@@ -1622,7 +1625,7 @@ function renderStrokeGrid(rid){
   const tabs=`<div class="lb-round-tab">${rounds.map(r=>`<button class="${r.id===rid?'on':''}" onclick="renderStrokeGrid('${r.id}')">${esc(r.name)}</button>`).join('')}</div>`;
   const H=[]; for(let h=1;h<=18;h++) H.push(h);
   const siEditor=`<div class="si-edit">${H.map(h=>`<div class="si-cell"><span class="hh">${h}</span><input type="number" min="1" max="18" value="${si[h-1]??''}" onchange="setCourseSI('${c?.id}',${h},this.value)"/></div>`).join('')}</div>`;
-  const headCells=H.map(h=>`<div class="gcell gh">${h}<span>${pars[h-1]||''}</span></div>`).join('');
+  const headCells=H.map(h=>`<div class="gcell gh">${h}<span>P${pars[h-1]||'?'}</span><span class="si">SI${si[h-1]??'?'}</span></div>`).join('');
   const players=(State.config.players||[]).slice().sort(cmpHcp);
   const rows=players.map(p=>{
     const ch=courseHcpOf(p.id,c);
@@ -1638,7 +1641,7 @@ function renderStrokeGrid(rid){
       <div class="eyebrow">Stroke index · which hole ranks 1 (hardest) – 18</div>
       <div class="gscroll">${siEditor}</div>
       <div class="eyebrow" style="margin-top:14px">Strokes per player</div>
-      <div class="gscroll"><div class="ggrid"><div class="grow ghead"><div class="gname">Hole · Par</div>${headCells}<div class="greset"></div></div>${rows}</div></div>
+      <div class="gscroll"><div class="ggrid"><div class="grow ghead"><div class="gname">Hole · Par · SI</div>${headCells}<div class="greset"></div></div>${rows}</div></div>
       <div class="muted" style="font-size:11px;margin-top:8px">Dots drive net for singles, better ball, shramble and team total. Scramble &amp; foursomes are team formats (one side handicap), so per-player dots don't change those rounds.</div>
     </div>`);
 }
