@@ -208,6 +208,11 @@ input,select{font-family:inherit;font-size:16px}
 
 <div class="screen" id="screen"></div>
 
+<div id="demoBar" class="hidden" style="position:fixed;left:0;right:0;bottom:calc(72px + env(safe-area-inset-bottom));z-index:40;max-width:640px;margin:0 auto;background:#7a3ea8;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;font-size:13px;font-weight:600;box-shadow:0 -4px 14px rgba(0,0,0,.2)">
+  <span>👁️ Demo preview — nothing is saved</span>
+  <button onclick="clearDemo()" style="background:#fff;color:#7a3ea8;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px">Exit demo</button>
+</div>
+
 <nav class="nav" id="nav"></nav>
 
 <div id="modalHost"></div>
@@ -378,6 +383,7 @@ const DEFAULT_CONFIG = () => ({
     bookingRef:'US58057',
     scrambleHcp:'low',
     useHandicaps:true,
+    hcpLocked:false,
     allowance:{singles:100, betterball:85, shramble:100, scramble:100},
   },
   teams:[ {id:'t1',name:'Team Gold',color:'#E5A823'}, {id:'t2',name:'Team Blue',color:'#1E5FA8'} ],
@@ -495,6 +501,7 @@ function courseHandicap(index, c){
 }
 const holeCount = ()=> State.config?.settings?.holeCount || 18;
 const useHcp = ()=> State.config?.settings?.useHandicaps!==false;
+const hcpLocked = ()=> !!State.config?.settings?.hcpLocked;
 const allowanceFor = (fmt)=>{ const a=State.config?.settings?.allowance||{}; return (a[fmt]!=null?a[fmt]:100)/100; };
 const isCaptain = (pid)=> !!player(pid)?.isCaptain;
 const teammates = (pid)=>{ const p=player(pid); return (State.config?.players||[]).filter(x=>x.teamId===p?.teamId); };
@@ -729,6 +736,7 @@ async function loadAll(){
   document.getElementById('tripSub').textContent=cfg.settings.tripSub||'';
 }
 async function refresh(){
+  if(State.demo) return;   // frozen preview — don't overwrite with live data
   try{
     await Store.flush();                 // retry any queued writes first
     const avs=await Store.list('avatar:');
@@ -803,6 +811,14 @@ function selectAvatar(btn,pid){
 }
 function renderHcpStep(pid){
   const cur=hcpOf(pid);
+  if(hcpLocked()){
+    showModal(`<div class="modal-h"><h2>Handicaps are locked</h2><p class="muted" style="margin:4px 0 0">${esc(player(pid).name)} — the commissioner has locked handicaps for the trip.${cur!=null?' Yours is set to <b>'+cur+'</b>.':' Yours isn\u2019t set — ask the commissioner to add it.'}</p></div>
+      <div class="modal-b">
+        <button class="btn gold" onclick="confirmIdentity('${pid}',false)">Got it — sign me in</button>
+        <button class="btn ghost" style="margin-top:8px" onclick="renderAvatarPick('${pid}')">Back</button>
+      </div>`);
+    return;
+  }
   showModal(`<div class="modal-h"><h2>Your handicap index</h2><p class="muted" style="margin:4px 0 0">${esc(player(pid).name)} — enter your GHIN Handicap Index (the decimal, e.g. 12.4). The app turns it into a course handicap for each round.</p></div>
     <div class="modal-b">
       <div class="field"><input id="hcpInput" type="number" step="0.1" inputmode="decimal" placeholder="e.g. 12.4" value="${cur!=null?cur:''}" style="text-align:center;font-size:28px;font-family:'Oswald'"/></div>
@@ -816,7 +832,7 @@ async function confirmIdentity(pid, saveHcp){
   const emoji=window._pendingAv||'🏌️';
   await Store.set('avatar:'+pid,{emoji});
   State.avatars[pid]=emoji;
-  if(saveHcp){
+  if(saveHcp && !hcpLocked()){
     const raw=$('#hcpInput')?.value;
     if(raw!==undefined && raw!==''){ const index=Number(raw); await Store.set('hcp:'+pid,{index}); State.hcps[pid]=index; }
   }
@@ -1599,6 +1615,9 @@ function renderAdmin(){
       <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:12px">
         <input type="checkbox" ${cfg.settings.useHandicaps!==false?'checked':''} onchange="setUseHandicaps(this.checked)" style="width:20px;height:20px"/> Use handicaps (net play) — off means gross for everything
       </label>
+      <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:12px;color:${cfg.settings.hcpLocked?'var(--red)':'inherit'}">
+        <input type="checkbox" ${cfg.settings.hcpLocked?'checked':''} onchange="setHcpLocked(this.checked)" style="width:20px;height:20px"/> 🔒 Lock handicaps — players can't change their index (you still can)
+      </label>
       <div class="field" style="margin:0 0 12px">
         <label>Scramble handicap</label>
         <select onchange="setScrambleHcp(this.value)">
@@ -1617,6 +1636,12 @@ function renderAdmin(){
       <div class="muted" style="margin-top:6px;font-size:11px">Standard match play: singles 100%, four-ball 85%. Scramble uses the method above.</div>
 
       <div class="divider"></div>
+      <div class="divider"></div>
+      <div class="eyebrow">Preview</div>
+      <button class="btn ghost sm" style="width:100%" onclick="loadDemo()">👁️ Load demo data (this phone only)</button>
+      <div class="muted" style="font-size:11px;margin-top:6px">Fills every screen with realistic fake scores so you can see how it'll look mid-trip. It stays on your phone, never syncs to anyone, and isn't saved — tap "Exit demo" to clear it.</div>
+
+      <div class="divider"></div>
       <div class="eyebrow">Danger zone</div>
       <button class="btn ghost sm" onclick="resetScores()" style="color:var(--red);border-color:var(--red)">Clear all scores</button>
     </div>
@@ -1624,6 +1649,7 @@ function renderAdmin(){
 }
 async function setScrambleHcp(v){ State.config.settings.scrambleHcp=v; await saveConfig(); renderAdmin(); }
 async function setUseHandicaps(on){ State.config.settings.useHandicaps=on; await saveConfig(); renderAdmin(); }
+async function setHcpLocked(on){ State.config.settings.hcpLocked=on; await saveConfig(); renderAdmin(); }
 async function setAllowance(fmt,v){ State.config.settings.allowance=State.config.settings.allowance||{}; State.config.settings.allowance[fmt]=(v===''?100:Number(v)); await saveConfig(); }
 async function setCourseTee(cid,name){ const c=course(cid); const t=(c?.tees||[]).find(x=>x.name===name); if(c&&t){ c.tee=name; c.rating=t.rating; c.slope=t.slope; } await saveConfig(); renderAdmin(); }
 async function setSegWeight(rid,segId,v){ const {seg}=findSeg(rid,segId); if(seg) seg.weight=(v===''?1:Number(v)); await saveConfig(); }
@@ -1769,6 +1795,54 @@ async function resetScores(){
   const keys=Object.keys(State.cards);
   for(const k of keys){ await Store.del(k); }
   State.cards={}; renderAdmin(); 
+}
+
+/* ---------- Demo preview (device-only, never saved) ---------- */
+function demoScore(par){ const d=[-1,0,0,0,1,1,2][Math.floor(Math.random()*7)]; return Math.max(1,(par||4)+d); }
+function demoFillCard(key, seg, pars, partial){
+  const end = partial ? seg.start + Math.floor((seg.end-seg.start)/2) : seg.end;
+  const holes={}; for(let h=seg.start; h<=end; h++){ holes[h]=demoScore(pars[h-1]); }
+  State.cards[key]={holes, enteredBy:'Demo', updatedAt:Date.now()};
+}
+function autoPairInMemory(seg){
+  const per=perSideFor(seg.format);
+  const a=teamRoster(State.config.teams[0].id).map(p=>p.id);
+  const b=teamRoster(State.config.teams[1].id).map(p=>p.id);
+  const n=Math.min(Math.floor(a.length/per),Math.floor(b.length/per));
+  const matches=[]; for(let k=0;k<n;k++){ matches.push({id:'dm'+k+Math.random().toString(36).slice(2,5), a:a.slice(k*per,k*per+per), b:b.slice(k*per,k*per+per)}); }
+  seg.matches=matches;
+}
+function loadDemo(){
+  const cfg=State.config, ids=cfg.teams.map(t=>t.id);
+  // in-memory: assign any unassigned players to teams, ensure a captain each
+  cfg.players.forEach((p,i)=>{ if(!p.teamId) p.teamId=ids[i%2]; });
+  ids.forEach(tid=>{ const roster=cfg.players.filter(p=>p.teamId===tid); if(roster.length && !roster.some(p=>p.isCaptain)) roster[0].isCaptain=true; });
+  cfg.rounds.forEach(r=>{
+    const c=courseOf(r), pars=c?.pars||[];
+    segsOf(r).forEach(seg=>{
+      if(!seg.format) return;
+      if(FORMATS[seg.format]?.scoring==='aggregate'){
+        cfg.players.forEach(p=>demoFillCard(cardKey(r.id,seg.id,p.id), seg, pars, false));
+      } else {
+        if(!segMatches(seg).length) autoPairInMemory(seg);
+        const isGroup=FORMATS[seg.format]?.side==='group';
+        segMatches(seg).forEach((m,mi)=>{
+          const partial = mi===0;   // leave the first match in progress to show a live status
+          if(isGroup){ demoFillCard(cardKey(r.id,seg.id,m.id+':a'),seg,pars,partial); demoFillCard(cardKey(r.id,seg.id,m.id+':b'),seg,pars,partial); }
+          else { [...m.a,...m.b].forEach(pid=>demoFillCard(cardKey(r.id,seg.id,pid),seg,pars,partial)); }
+        });
+      }
+    });
+  });
+  State.demo=true;
+  document.getElementById('demoBar')?.classList.remove('hidden');
+  closeModal(); go('board');
+}
+async function clearDemo(){
+  State.demo=false;
+  document.getElementById('demoBar')?.classList.add('hidden');
+  await loadAll();   // reload the real config + scores from the store, discarding the in-memory demo
+  render(true);
 }
 
 /* ============================================================
