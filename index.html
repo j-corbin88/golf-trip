@@ -102,6 +102,7 @@ input,select{font-family:inherit;font-size:16px}
 .holepick button.done{background:#dfe6dc}
 .holepick button.on{background:var(--ink);color:var(--light)}
 .holepick button .dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--green)}
+.holepick button .strk{position:absolute;top:2px;right:3px;font-size:8px;line-height:1;color:var(--red);font-weight:700}
 .stepper{display:flex;align-items:center;justify-content:center;gap:18px;margin:8px 0 16px}
 .stepper .val{font-family:'Oswald';font-weight:700;font-size:64px;line-height:1;min-width:96px;text-align:center}
 .stepper .val small{display:block;font-family:'Inter';font-weight:600;font-size:12px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase}
@@ -156,16 +157,17 @@ input,select{font-family:inherit;font-size:16px}
 .status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
 .divider{height:1px;background:var(--line);margin:14px 0}
 .fmt-blurb{font-size:12px;color:var(--text-dim);line-height:1.5;margin-top:6px}
-.match{display:flex;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--line)}
+.match{display:flex;align-items:center;gap:6px;padding:7px 4px;border-bottom:1px solid var(--line)}
 .match:last-of-type{border-bottom:none}
-.mside{flex:1;display:flex;align-items:center;gap:7px;min-width:0}
-.mside.b{justify-content:flex-end;text-align:right}
-.mside .mav{font-size:17px;flex:none}
-.mside .mnm{font-weight:600;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mside.win .mnm{color:var(--tc)}
-.mside.win{position:relative}
-.mstatus{flex:none;min-width:96px;text-align:center;font-family:'Oswald'}
-.mstatus b{font-size:13px;font-weight:600}
+.match-head{display:flex;justify-content:space-between;padding:4px 6px 6px;font-family:'Oswald';font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.mside{flex:1;display:flex;align-items:center;gap:6px;min-width:0;padding:5px 6px;border-radius:9px}
+.mside.b{flex-direction:row;justify-content:flex-end;text-align:right}
+.mside .mav{font-size:16px;flex:none;letter-spacing:-2px}
+.mside .mnames{display:flex;flex-direction:column;gap:1px;min-width:0}
+.mside .mnames span{font-weight:600;font-size:12.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mside.win .mnames span{color:var(--tc)}
+.mstatus{flex:none;min-width:74px;text-align:center;font-family:'Oswald'}
+.mstatus b{font-size:12px;font-weight:600;line-height:1.15;display:inline-block}
 .mstatus .pre{color:var(--text-dim)}
 .pairsel{width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:#fff;margin-bottom:5px;font-size:14px}
 .seg-toggle{display:flex;background:rgba(255,255,255,.06);border-radius:999px;padding:3px;margin-bottom:14px;gap:3px}
@@ -593,6 +595,16 @@ function sideLabel(side){
   return names.length?names.join(' + '):'Group';
 }
 function sideAvatar(side){ return side.kind==='player'? avatarOf(side.id) : '⛳'; }
+// First name, with last initial when another player shares that first name
+function displayName(pid){
+  const p=player(pid); if(!p) return '?';
+  const parts=String(p.name).trim().split(/\s+/); const first=parts[0]||'?';
+  const clash=(State.config.players||[]).some(o=>o.id!==pid && (String(o.name).trim().split(/\s+/)[0]||'').toLowerCase()===first.toLowerCase());
+  return (clash && parts.length>1) ? `${first} ${parts[parts.length-1][0]}.` : first;
+}
+function tint(hex,a){ const h=(hex||'#999').replace('#',''); const s=h.length===3?h.split('').map(c=>c+c).join(''):h; const n=parseInt(s,16)||0; return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
+function cmpHcp(a,b){ const ha=hcpOf(a.id), hb=hcpOf(b.id); return (ha==null?999:ha)-(hb==null?999:hb); }
+function cmpCapHcp(a,b){ const c=(b.isCaptain?1:0)-(a.isCaptain?1:0); return c!==0?c:cmpHcp(a,b); } // captain first, then handicap
 
 /* who can THIS device enter for, in a segment */
 function editableSidesForSeg(round, seg){
@@ -680,6 +692,16 @@ function segTeamNet(round, seg){ // provisional fallback when no matches defined
   return out;
 }
 const segWeight = (seg)=> (seg?.weight!=null && seg.weight!=='') ? Number(seg.weight) : 1;
+function pointsAvailable(){
+  let n=0;
+  (State.config.rounds||[]).forEach(r=>segsOf(r).forEach(seg=>{
+    if(!seg.format) return;
+    const w=segWeight(seg);
+    n += (FORMATS[seg.format]?.scoring==='aggregate') ? w : segMatches(seg).length*w;
+  }));
+  return n;
+}
+function pointsToClinch(){ const a=pointsAvailable(); return a>0 ? a/2 + 0.5 : 0; }
 function tripPoints(){
   const pts={}; (State.config.teams||[]).forEach(t=>pts[t.id]=0);
   (State.config.rounds||[]).forEach(r=>{
@@ -896,8 +918,8 @@ function cupHTML(){
   const {A,B,pA,pB,lp}=boardStats();
   return `<div class="cup">
     <div class="cup-head">
-      <div class="cup-team"><span class="nm" style="color:${A.color}">${esc(A.name)}</span><span class="pts" id="ptsL">${fmtPts(pA)}</span><span class="sub">Points</span></div>
-      <div class="cup-team right"><span class="nm" style="color:${B.color}">${esc(B.name)}</span><span class="pts" id="ptsR">${fmtPts(pB)}</span><span class="sub">Points</span></div>
+      <div class="cup-team"><span class="nm" style="color:${A.color}">${esc(A.name)}</span><span class="pts" id="ptsL">${fmtPts(pA)}</span><span class="sub">Projected</span></div>
+      <div class="cup-team right"><span class="nm" style="color:${B.color}">${esc(B.name)}</span><span class="pts" id="ptsR">${fmtPts(pB)}</span><span class="sub">Projected</span></div>
     </div>
     <div class="meter"><div class="fillL" id="fillL" style="width:${lp}%;background:${A.color}"></div><div class="fillR" id="fillR" style="width:${100-lp}%;background:${B.color}"></div><div class="mid"></div></div>
     <div class="cup-foot" id="cupFoot">${cupFootText()}</div>
@@ -905,7 +927,10 @@ function cupHTML(){
 }
 function cupFootText(){
   const {A,B,pA,pB}=boardStats();
-  return `${pA===pB?'All square':(pA>pB?A.name+' leads':B.name+' leads')} · ${liveSegCount()} of ${totalSegCount()} segments set`;
+  const lead = pA===pB?'All square':(pA>pB?A.name+' leads':B.name+' leads');
+  const avail=pointsAvailable();
+  if(avail<=0) return `${lead} · set formats & pairings to begin`;
+  return `${lead} · ${fmtPts(pointsToClinch())} to win · ${fmtPts(avail)} pts up for grabs`;
 }
 function syncState(){
   const s=Store.status();
@@ -981,13 +1006,13 @@ function playerBoard(round){
       <div style="width:18px;text-align:center;font-family:'Oswald';font-weight:700;color:var(--text-dim)">${i+1}</div>
       <div class="teamdot" style="background:${t?.color||'#999'}"></div>
       <div class="av" style="border-color:${t?.color||'transparent'}">${avatarOf(r.pid)}</div>
-      <div class="nm"><b>${esc(p?.name||'—')}</b><span>Thru ${r.thru} · Idx ${hcpOf(r.pid)??'—'}</span></div>
+      <div class="nm"><b>${esc(p?.name||'—')}</b><span>Thru ${r.thru} · ${Math.round(r.gross)} gross${useHcp()?' · Idx '+(hcpOf(r.pid)??'—'):''}</span></div>
       <div class="rel ${cls}">${relTxt}</div>
       <div class="sc">${Math.round(r.net)}</div>
     </div>`;
   }).join('');
-  return `<div class="card"><div class="eyebrow" style="color:var(--gold)">${esc(round.name)} · Individual net</div>${body}
-    <div class="muted" style="margin-top:10px;font-size:11px">Net shown big · score-to-par at right.</div></div>`;
+  return `<div class="card"><div class="eyebrow" style="color:var(--gold)">${esc(round.name)} · Individual ${useHcp()?'net':'gross'}</div>${body}
+    <div class="muted" style="margin-top:10px;font-size:11px">${useHcp()?'Net shown big, gross in the line below':'Gross shown'} · score-to-par at right · lowest wins.</div></div>`;
 }
 function viewBoard(){
   const draftLive=getDraft().status==='live';
@@ -1038,21 +1063,25 @@ function segMatchBoard(round,seg){
   const c=courseOf(round);
   const [TA,TB]=State.config.teams;
   const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')}</div>`;
+  const matchHead=`<div class="match-head"><span style="color:${TA.color}">${esc(TA.name)}</span><span></span><span style="color:${TB.color}">${esc(TB.name)}</span></div>`;
+  const avs=(ids)=>`<span class="mav">${ids.map(id=>avatarOf(id)).join('')}</span>`;
+  const nms=(ids)=>`<span class="mnames">${ids.map(id=>`<span>${esc(displayName(id))}</span>`).join('')}</span>`;
   const rows=segMatches(seg).map(m=>{
     const res=computeMatch(round,seg,m);
-    const aT=teamOfSide(m.a), bT=teamOfSide(m.b);
-    const aColor=team(aT)?.color||'#999', bColor=team(bT)?.color||'#999';
-    const aWin=res.played>0 && res.diff>0, bWin=res.played>0 && res.diff<0;
-    const aNames=m.a.map(id=>player(id)?.name?.split(' ')[0]||'?').join(' / ');
-    const bNames=m.b.map(id=>player(id)?.name?.split(' ')[0]||'?').join(' / ');
+    const aIsLeft = teamOfSide(m.a)===TA.id;        // keep Team A always on the left
+    const left = aIsLeft ? m.a : m.b;
+    const right = aIsLeft ? m.b : m.a;
+    const leftUp  = res.played>0 && (aIsLeft ? res.diff>0 : res.diff<0);
+    const rightUp = res.played>0 && (aIsLeft ? res.diff<0 : res.diff>0);
+    const statusTxt = res.played===0 ? '—' : matchStatusText(res);
     return `<div class="match">
-      <div class="mside ${aWin?'win':''}" style="--tc:${aColor}"><span class="mav">${m.a.map(id=>avatarOf(id)).join('')}</span><span class="mnm">${esc(aNames)}</span></div>
-      <div class="mstatus">${res.played===0?'<span class="pre">—</span>':`<b>${esc(matchStatusText(res))}</b>`}</div>
-      <div class="mside b ${bWin?'win':''}" style="--tc:${bColor}"><span class="mnm">${esc(bNames)}</span><span class="mav">${m.b.map(id=>avatarOf(id)).join('')}</span></div>
+      <div class="mside ${leftUp?'win':''}" style="--tc:${TA.color};${leftUp?'background:'+tint(TA.color,.2):''}">${avs(left)}${nms(left)}</div>
+      <div class="mstatus">${res.played===0?'<span class="pre">—</span>':`<b>${esc(statusTxt)}</b>`}</div>
+      <div class="mside b ${rightUp?'win':''}" style="--tc:${TB.color};${rightUp?'background:'+tint(TB.color,.2):''}">${nms(right)}${avs(right)}</div>
     </div>`;
   }).join('');
-  return `<div class="card">${head}${rows||'<div class="muted">No matches set for this segment.</div>'}
-    <div class="muted" style="margin-top:8px;font-size:11px">Net match play · status shown from each match's leader.</div>
+  return `<div class="card">${head}${rows?matchHead+rows:'<div class="muted">No matches set for this segment.</div>'}
+    <div class="muted" style="margin-top:8px;font-size:11px">The highlighted side is up. "2 UP · thru 5" = 2 holes ahead through 5; "3&2" = won by 3 with 2 to play.</div>
   </div>`;
 }
 function segLeaderboard(round,seg){
@@ -1122,10 +1151,18 @@ function viewEnter(){
 
   const sideTabs=`<div class="side-tabs">${editable.map(s=>`<button class="${s.id===State.entrySide?'on':''}" onclick="setSide('${s.id}')"><span class="av">${sideAvatar(s)}</span>${esc(sideLabel(s))}</button>`).join('')}</div>`;
 
+  const isIndiv = side.kind==='player';
+  const si = c?.si||[];
+  const pCH = (isIndiv && useHcp()) ? playingCH(side.id, c, seg.format) : 0;
+  const strokesOn = (h)=> pCH ? strokesOnHole(pCH, si[h-1]) : 0;
+  let segStrokes=0; for(let h=seg.start; h<=seg.end; h++) segStrokes+=strokesOn(h);
+
   const holeCells=[];
   for(let h=seg.start; h<=seg.end; h++){
     const v=card.holes?.[h];
-    holeCells.push(`<button id="hole-${h}" class="${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${h}${v!=null?'<span class="dot"></span>':''}</button>`);
+    const sN=strokesOn(h);
+    const pip = sN>0 ? `<span class="strk">${sN>1?sN:'•'}</span>` : '';
+    holeCells.push(`<button id="hole-${h}" class="${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${pip}${h}${v!=null?'<span class="dot"></span>':''}</button>`);
   }
   const segHoleCount=seg.end-seg.start+1;
 
@@ -1133,16 +1170,21 @@ function viewEnter(){
   const par=pars[State.entryHole-1]||4;
   const g=grossTotal(card), thru=holesPlayed(card);
   const enteredBy=card.enteredBy?`Last saved by ${esc(card.enteredBy)}`:'Not started';
+  const strokeThisHole=strokesOn(State.entryHole);
+  const strokeLine = (isIndiv && useHcp())
+    ? `<div class="muted" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--text)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} (course handicap ${pCH}) · <b>•</b> marks a stroke hole${strokeThisHole?` · you get ${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'} on hole ${State.entryHole}`:''}</div>`
+    : '';
 
   return `
   ${roundTabs}
   ${segTabs}
   <div class="muted" style="margin:-4px 2px 12px">${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')} · ${esc(round.dateLabel)}${round.split?' · '+esc(seg.label):''}</div>
   ${sideTabs}
+  ${strokeLine}
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
       <div class="disp" style="font-size:20px;font-weight:600">Hole ${State.entryHole} <span style="color:var(--text-dim);font-size:14px">· Par ${par}</span></div>
-      <div class="mono" id="entryTotal" style="font-weight:700">Total ${g??0} <span style="color:var(--text-dim);font-weight:500">(${thru}/${segHoleCount})</span></div>
+      <div class="mono" id="entryTotal" style="font-weight:700">${entryTotalHTML(card,round,seg,side.id)}</div>
     </div>
     <div class="holepick" style="grid-template-columns:repeat(9,1fr)">${holeCells.join('')}</div>
     <div class="stepper">
@@ -1160,6 +1202,17 @@ function viewEnter(){
     <div id="syncNote" style="display:none;text-align:center;font-size:11px;color:#9a7a10;margin-top:6px"></div>
   </div>
   `;
+}
+function entryTotalHTML(card, round, seg, sideId){
+  const g=grossTotal(card)||0, thru=holesPlayed(card), segN=seg.end-seg.start+1;
+  const isIndiv = !String(sideId).includes(':') && !!player(sideId);
+  let net='';
+  if(isIndiv && useHcp()){
+    const c=courseOf(round), si=c?.si||[]; const pCH=playingCH(sideId,c,seg.format);
+    let ps=0; Object.keys(card.holes||{}).forEach(h=>{ if(card.holes[h]!=null) ps+=strokesOnHole(pCH,si[h-1]); });
+    net=` · <span style="color:var(--gold)">Net ${g-ps}</span>`;
+  }
+  return `Total ${g}${net} <span style="color:var(--text-dim);font-weight:500">(${thru}/${segN})</span>`;
 }
 function setEnterRound(id){ State.activeRound=id; State.entrySeg=null; State.entrySide=null; render(false); }
 function setEnterSeg(id){ State.entrySeg=id; State.entrySide=null; render(false); }
@@ -1222,9 +1275,8 @@ function updateEntryAfterSave(card){
     if(has && !dot){ dot=document.createElement('span'); dot.className='dot'; btn.appendChild(dot); }
     if(!has && dot){ dot.remove(); }
   }
-  const segHoleCount=seg.end-seg.start+1, g=grossTotal(card)||0, thru=holesPlayed(card);
   const tot=document.getElementById('entryTotal');
-  if(tot) tot.innerHTML=`Total ${g} <span style="color:var(--text-dim);font-weight:500">(${thru}/${segHoleCount})</span>`;
+  if(tot) tot.innerHTML=entryTotalHTML(card, round, seg, State.entrySide);
   const eb=document.getElementById('enteredBy');
   if(eb) eb.textContent=card.enteredBy?`Last saved by ${card.enteredBy}`:'Not started';
   updateSyncNote();
@@ -1274,7 +1326,7 @@ function viewRoster(){
       <div class="muted" style="text-align:center;margin-top:10px">Updates live as the commissioner makes picks.</div>`;
   }
   const blocks=teams.map(t=>{
-    const roster=players.filter(p=>p.teamId===t.id);
+    const roster=players.filter(p=>p.teamId===t.id).sort(cmpCapHcp);
     const cap=roster.find(p=>p.isCaptain);
     const rows=roster.map(p=>`<div class="roster-item">
       <div class="av">${avatarOf(p.id)}</div>
@@ -1288,8 +1340,8 @@ function viewRoster(){
         <span class="muted" style="margin-left:auto">${roster.length} players</span>
       </div>${rows}</div>`;
   }).join('');
-  const unassigned=players.filter(p=>!p.teamId);
-  const un=unassigned.length?`<div class="card"><div class="eyebrow">Not on a team</div>${unassigned.map(p=>`<div class="roster-item"><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b></div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`).join('')}</div>`:'';
+  const unassigned=players.filter(p=>!p.teamId).sort(cmpHcp);
+  const un=unassigned.length?`<div class="card"><div class="eyebrow">${teams.some(t=>players.some(p=>p.teamId===t.id))?'Not on a team':'The Field · by handicap'}</div>${unassigned.map(p=>`<div class="roster-item"><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b></div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`).join('')}</div>`:'';
   const mv=myVote();
   const voteCard = (d.status==='none') ? `<div class="card">
     <div class="eyebrow">Captain Vote</div>
