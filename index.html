@@ -1625,7 +1625,7 @@ function renderStrokeGrid(rid){
   const tabs=`<div class="lb-round-tab">${rounds.map(r=>`<button class="${r.id===rid?'on':''}" onclick="renderStrokeGrid('${r.id}')">${esc(r.name)}</button>`).join('')}</div>`;
   const H=[]; for(let h=1;h<=18;h++) H.push(h);
   const siEditor=`<div class="si-edit">${H.map(h=>`<div class="si-cell"><span class="hh">${h}</span><input type="number" min="1" max="18" value="${si[h-1]??''}" onchange="setCourseSI('${c?.id}',${h},this.value)"/></div>`).join('')}</div>`;
-  const headCells=H.map(h=>`<div class="gcell gh">${h}<span>P${pars[h-1]||'?'}</span><span class="si">SI${si[h-1]??'?'}</span></div>`).join('');
+  const headCells=H.map(h=>`<div class="gcell gh">${h}<span>${pars[h-1]||'?'}</span><span class="si">${si[h-1]??'?'}</span></div>`).join('');
   const players=(State.config.players||[]).slice().sort(cmpHcp);
   const rows=players.map(p=>{
     const ch=courseHcpOf(p.id,c);
