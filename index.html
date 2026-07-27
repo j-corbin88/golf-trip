@@ -162,14 +162,39 @@ input,select{font-family:inherit;font-size:16px}
 .match-head{display:flex;justify-content:space-between;padding:4px 6px 6px;font-family:'Oswald';font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
 .mside{flex:1;display:flex;align-items:center;gap:6px;min-width:0;padding:5px 6px;border-radius:9px}
 .mside.b{flex-direction:row;justify-content:flex-end;text-align:right}
-.mside .mav{font-size:16px;flex:none;letter-spacing:-2px}
-.mside .mnames{display:flex;flex-direction:column;gap:1px;min-width:0}
+.mside .mav{font-size:15px;flex:none;letter-spacing:-3px;margin-right:2px}
+.mside.b .mav{margin-right:0;margin-left:2px}
+.mside .mnames{display:flex;flex-direction:column;gap:1px;min-width:0;flex:1}
 .mside .mnames span{font-weight:600;font-size:12.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .mside.win .mnames span{color:var(--tc)}
-.mstatus{flex:none;min-width:74px;text-align:center;font-family:'Oswald'}
-.mstatus b{font-size:12px;font-weight:600;line-height:1.15;display:inline-block}
+.mstatus{flex:none;min-width:60px;text-align:center;font-family:'Oswald';display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.1}
+.mstatus b{font-size:12.5px;font-weight:600}
+.mstatus .ssub{font-size:9px;color:var(--text-dim);font-weight:500;text-transform:uppercase;letter-spacing:.03em}
 .mstatus .pre{color:var(--text-dim)}
 .pairsel{width:100%;padding:8px;border-radius:8px;border:1px solid var(--line);background:#fff;margin-bottom:5px;font-size:14px}
+.gscroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line);border-radius:10px;background:var(--paper)}
+.si-edit{display:flex}
+.si-cell{flex:none;width:36px;text-align:center;padding:5px 2px;border-right:1px solid var(--line)}
+.si-cell:last-child{border-right:none}
+.si-cell .hh{display:block;font-size:9px;color:var(--text-dim);font-weight:700;margin-bottom:3px}
+.si-cell input{width:30px;padding:4px 0;text-align:center;border:1px solid var(--line);border-radius:6px;font-size:12px;font-family:'Oswald';background:#fff}
+.ggrid{display:inline-block;min-width:100%}
+.grow{display:flex;align-items:stretch;border-bottom:1px solid var(--line)}
+.grow:last-child{border-bottom:none}
+.gname{flex:none;width:78px;position:sticky;left:0;background:var(--paper);z-index:2;padding:5px 7px;font-size:12px;font-weight:600;border-right:1px solid var(--line);display:flex;flex-direction:column;justify-content:center}
+.gname span{font-size:9px;color:var(--text-dim);font-weight:500}
+.grow.ghead .gname{background:var(--paper2)}
+.grow.ghead{background:var(--paper2)}
+.gcell{flex:none;width:31px;display:flex;align-items:center;justify-content:center;font-family:'Oswald';font-size:12px;border-right:1px solid var(--line);color:var(--text-dim)}
+.gcell:last-of-type{border-right:none}
+.gcell.gh{flex-direction:column;font-weight:700;font-size:11px;color:var(--text);line-height:1}
+.gcell.gh span{font-size:8px;color:var(--text-dim);font-weight:500;margin-top:1px}
+.scell{background:transparent;height:36px;cursor:pointer}
+.scell.has{color:var(--text-dim);font-weight:600}
+.scell.ov.has{color:#fff;background:var(--gold);font-weight:800}
+.scell.ov.z{color:var(--red);font-weight:800}
+.greset{flex:none;width:32px;background:transparent;color:var(--text-dim);border:none;border-left:1px solid var(--line);font-size:15px;cursor:pointer}
+.grow.ghead .greset{background:var(--paper2)}
 .seg-toggle{display:flex;background:rgba(255,255,255,.06);border-radius:999px;padding:3px;margin-bottom:14px;gap:3px}
 .seg-toggle button{flex:1;padding:8px;border-radius:999px;font-size:13px;font-weight:600;color:rgba(237,231,214,.6)}
 .seg-toggle button.on{background:var(--gold);color:var(--ink)}
@@ -336,10 +361,10 @@ function formatDetailNote(key){
   if(!useHcp()) return 'Handicaps are turned off for this event — every format is played gross.';
   const pct=(f)=>Math.round(allowanceFor(f)*100);
   const map={
-    singles:`Match play, 1 point per match. Strokes at ${pct('singles')}% of course handicap; the low player in each match plays off scratch.`,
+    singles:`Match play, 1 point per match. Each player gets their own stroke dots (from ${pct('singles')}% of course handicap, or the commissioner's stroke sheet); low net wins the hole.`,
     foursomes:`2-v-2 match play, one ball, partners alternating shots. The side plays off 50% of the pair's combined course handicap.`,
-    betterball:`2-v-2 match play at ${pct('betterball')}% allowance; each hole the team takes the better net of the two partners.`,
-    shramble:`2-v-2 match play at ${pct('shramble')}% allowance. Best drive off the tee, then each partner plays their own ball in.`,
+    betterball:`2-v-2 match play at ${pct('betterball')}% allowance; each hole the team takes the better net (dots included) of the two partners.`,
+    shramble:`2-v-2 match play at ${pct('shramble')}% allowance. Best drive off the tee, then each partner plays their own ball in; low net wins the hole.`,
     scramble:`Match play, one ball per side. Side handicap: ${scrambleMethodLabel()}.`,
     teamtotal:`Stroke play — every player's net over the segment is added up and the lower team total wins.`,
   };
@@ -532,17 +557,39 @@ function strokesOnHole(ch, si){
   const s=base+(si<=rem?1:0);
   return ch<0 ? -s : s;
 }
-// net for a single side's card within a segment, using per-hole allocation
+/* ---------- Stroke sheet: absolute strokes per player, per round, per hole ----------
+   Auto value comes from the handicap math; the commissioner can override any
+   cell (0/1/2/3). Match play, team total, the player board, and the entry dots
+   all read this one function, so nothing can disagree. */
+function segForHole(round, hole){
+  return segsOf(round).find(s => s.format && hole>=s.start && hole<=s.end) || null;
+}
+function autoStrokes(pid, round, hole){
+  if(!useHcp()) return 0;
+  const seg=segForHole(round, hole); if(!seg) return 0;
+  const c=courseOf(round);
+  const eff=Math.round(courseHcpOf(pid,c)*allowanceFor(seg.format));
+  return strokesOnHole(eff, c?.si?c.si[hole-1]:null);
+}
+function getStrokeOverride(rid, pid, hole){
+  const v=State.config?.strokeOverrides?.[rid]?.[pid]?.[hole];
+  return v==null ? null : v;
+}
+function strokeSheet(pid, round, hole){
+  const ov=getStrokeOverride(round.id, pid, hole);
+  return ov!=null ? ov : autoStrokes(pid, round, hole);
+}
+function playerHasOverrides(rid, pid){
+  const o=State.config?.strokeOverrides?.[rid]?.[pid];
+  return !!o && Object.keys(o).length>0;
+}
+// net for a single side's card within a segment — reads the stroke sheet
 function netForCard(sideId, card, isGroup, round, fmt){
   const g=grossTotal(card); if(g==null) return null;
-  if(isGroup || !useHcp()) return g; // group handicap deferred; gross when handicaps off
-  const idx=hcpOf(sideId); if(idx==null) return g;
-  const c=courseOf(round);
-  const ch=courseHandicap(idx,c); let eff=(ch!=null)?ch:Math.round(idx);
-  eff=Math.round(eff*allowanceFor(fmt));
-  const si=c?.si;
+  if(isGroup || !useHcp()) return g; // group handicap handled by the side; gross when handicaps off
+  if(hcpOf(sideId)==null && !playerHasOverrides(round.id,sideId)) return g;
   let strokes=0;
-  Object.keys(card.holes||{}).forEach(h=>{ if(card.holes[h]!=null) strokes+=strokesOnHole(eff, si?si[h-1]:null); });
+  Object.keys(card.holes||{}).forEach(h=>{ if(card.holes[h]!=null) strokes+=strokeSheet(sideId, round, Number(h)); });
   return g - strokes;
 }
 function segPar(round, seg){
@@ -653,10 +700,8 @@ function computeMatch(round, seg, match){
     aVal=(h)=> aCard?.holes?.[h]!=null ? aCard.holes[h]-strokesOnHole(aStk,si[h-1]) : null;
     bVal=(h)=> bCard?.holes?.[h]!=null ? bCard.holes[h]-strokesOnHole(bStk,si[h-1]) : null;
   } else {
-    const all=[...match.a,...match.b];
-    const chs=all.map(id=>playingCH(id,c,fmt)); const low=Math.min(...chs);
-    const stk={}; all.forEach((id,i)=>stk[id]=chs[i]-low);
-    const bestNet=(ids,h)=>{ let best=null; ids.forEach(id=>{ const g=State.cards[cardKey(round.id,seg.id,id)]?.holes?.[h]; if(g!=null){ const nt=g-strokesOnHole(stk[id],si[h-1]); if(best==null||nt<best) best=nt; } }); return best; };
+    // Individual formats: each player plays their own strokes from the sheet; low net wins the hole
+    const bestNet=(ids,h)=>{ let best=null; ids.forEach(id=>{ const g=State.cards[cardKey(round.id,seg.id,id)]?.holes?.[h]; if(g!=null){ const nt=g-strokeSheet(id,round,h); if(best==null||nt<best) best=nt; } }); return best; };
     aVal=(h)=>bestNet(match.a,h); bVal=(h)=>bestNet(match.b,h);
   }
   let aUp=0,bUp=0,played=0;
@@ -667,12 +712,15 @@ function computeMatch(round, seg, match){
   return {aUp,bUp,played,remaining,diff,final};
 }
 function matchStatusText(res){
-  if(res.played===0) return 'Not started';
+  const p=matchStatusParts(res); return p.sub?`${p.main} · ${p.sub}`:p.main;
+}
+function matchStatusParts(res){
+  if(res.played===0) return {main:'—'};
   const u=Math.abs(res.diff);
-  if(res.diff===0) return res.remaining===0 ? 'Halved' : `All square · thru ${res.played}`;
-  if(res.final && res.remaining>0) return `${u}&${res.remaining}`;      // closed out
-  if(res.remaining===0) return `${u} UP · final`;
-  return `${u} UP · thru ${res.played}`;
+  if(res.diff===0) return res.remaining===0 ? {main:'Halved'} : {main:'AS', sub:`thru ${res.played}`};
+  if(res.final && res.remaining>0) return {main:`${u}&${res.remaining}`};   // closed out
+  if(res.remaining===0) return {main:`${u} UP`, sub:'final'};
+  return {main:`${u} UP`, sub:`thru ${res.played}`};
 }
 function matchPointSplit(res){
   if(res.played===0) return null;
@@ -1074,14 +1122,15 @@ function segMatchBoard(round,seg){
     const leftUp  = res.played>0 && (aIsLeft ? res.diff>0 : res.diff<0);
     const rightUp = res.played>0 && (aIsLeft ? res.diff<0 : res.diff>0);
     const statusTxt = res.played===0 ? '—' : matchStatusText(res);
+    const sp=matchStatusParts(res);
     return `<div class="match">
       <div class="mside ${leftUp?'win':''}" style="--tc:${TA.color};${leftUp?'background:'+tint(TA.color,.2):''}">${avs(left)}${nms(left)}</div>
-      <div class="mstatus">${res.played===0?'<span class="pre">—</span>':`<b>${esc(statusTxt)}</b>`}</div>
+      <div class="mstatus">${res.played===0?'<span class="pre">—</span>':`<b>${esc(sp.main)}</b>${sp.sub?`<span class="ssub">${esc(sp.sub)}</span>`:''}`}</div>
       <div class="mside b ${rightUp?'win':''}" style="--tc:${TB.color};${rightUp?'background:'+tint(TB.color,.2):''}">${nms(right)}${avs(right)}</div>
     </div>`;
   }).join('');
   return `<div class="card">${head}${rows?matchHead+rows:'<div class="muted">No matches set for this segment.</div>'}
-    <div class="muted" style="margin-top:8px;font-size:11px">The highlighted side is up. "2 UP · thru 5" = 2 holes ahead through 5; "3&2" = won by 3 with 2 to play.</div>
+    <div class="muted" style="margin-top:8px;font-size:11px">The highlighted side is up. "AS" = all square · "2 UP · thru 5" = 2 holes ahead through 5 · "3&2" = won by 3 with 2 to play.</div>
   </div>`;
 }
 function segLeaderboard(round,seg){
@@ -1153,8 +1202,7 @@ function viewEnter(){
 
   const isIndiv = side.kind==='player';
   const si = c?.si||[];
-  const pCH = (isIndiv && useHcp()) ? playingCH(side.id, c, seg.format) : 0;
-  const strokesOn = (h)=> pCH ? strokesOnHole(pCH, si[h-1]) : 0;
+  const strokesOn = (h)=> (isIndiv && useHcp()) ? strokeSheet(side.id, round, h) : 0;
   let segStrokes=0; for(let h=seg.start; h<=seg.end; h++) segStrokes+=strokesOn(h);
 
   const holeCells=[];
@@ -1172,7 +1220,7 @@ function viewEnter(){
   const enteredBy=card.enteredBy?`Last saved by ${esc(card.enteredBy)}`:'Not started';
   const strokeThisHole=strokesOn(State.entryHole);
   const strokeLine = (isIndiv && useHcp())
-    ? `<div class="muted" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--text)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} (course handicap ${pCH}) · <b>•</b> marks a stroke hole${strokeThisHole?` · you get ${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'} on hole ${State.entryHole}`:''}</div>`
+    ? `<div class="muted" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--text)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b>•</b> marks a stroke hole${strokeThisHole?` · you get ${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'} on hole ${State.entryHole}`:''}</div>`
     : '';
 
   return `
@@ -1208,8 +1256,7 @@ function entryTotalHTML(card, round, seg, sideId){
   const isIndiv = !String(sideId).includes(':') && !!player(sideId);
   let net='';
   if(isIndiv && useHcp()){
-    const c=courseOf(round), si=c?.si||[]; const pCH=playingCH(sideId,c,seg.format);
-    let ps=0; Object.keys(card.holes||{}).forEach(h=>{ if(card.holes[h]!=null) ps+=strokesOnHole(pCH,si[h-1]); });
+    let ps=0; Object.keys(card.holes||{}).forEach(h=>{ if(card.holes[h]!=null) ps+=strokeSheet(sideId, round, Number(h)); });
     net=` · <span style="color:var(--gold)">Net ${g-ps}</span>`;
   }
   return `Total ${g}${net} <span style="color:var(--text-dim);font-weight:500">(${thru}/${segN})</span>`;
@@ -1556,8 +1603,121 @@ function confirmResetDraft(){
 }
 
 /* ============================================================
+   STROKE SHEET EDITOR (stroke index + per-player overrides)
+   ============================================================ */
+function strokeGridRound(){ return State.strokeRound || (State.config.rounds.find(r=>roundLive(r))||State.config.rounds[0])?.id; }
+function strokeCellHTML(rid,pid,round,h){
+  const ov=getStrokeOverride(rid,pid,h);
+  const val = ov!=null ? ov : autoStrokes(pid,round,h);
+  const isOv = ov!=null;
+  const txt = val>0 ? String(val) : (isOv?'0':'');
+  return `<button id="sc-${pid}-${h}" class="gcell scell ${isOv?'ov':''} ${val>0?'has':''} ${isOv&&val===0?'z':''}" onclick="cycleStroke('${rid}','${pid}',${h})">${txt}</button>`;
+}
+function renderStrokeGrid(rid){
+  rid = rid || strokeGridRound();
+  State.strokeRound = rid;
+  const round=State.config.rounds.find(r=>r.id===rid);
+  const c=courseOf(round), pars=c?.pars||[], si=c?.si||[];
+  const rounds=State.config.rounds;
+  const tabs=`<div class="lb-round-tab">${rounds.map(r=>`<button class="${r.id===rid?'on':''}" onclick="renderStrokeGrid('${r.id}')">${esc(r.name)}</button>`).join('')}</div>`;
+  const H=[]; for(let h=1;h<=18;h++) H.push(h);
+  const siEditor=`<div class="si-edit">${H.map(h=>`<div class="si-cell"><span class="hh">${h}</span><input type="number" min="1" max="18" value="${si[h-1]??''}" onchange="setCourseSI('${c?.id}',${h},this.value)"/></div>`).join('')}</div>`;
+  const headCells=H.map(h=>`<div class="gcell gh">${h}<span>${pars[h-1]||''}</span></div>`).join('');
+  const players=(State.config.players||[]).slice().sort(cmpHcp);
+  const rows=players.map(p=>{
+    const ch=courseHcpOf(p.id,c);
+    const cells=H.map(h=>strokeCellHTML(rid,p.id,round,h)).join('');
+    return `<div class="grow"><div class="gname">${esc(displayName(p.id))}<span>${useHcp()?'CH '+ch:'—'}</span></div>${cells}<button class="greset" onclick="resetStrokeRow('${rid}','${p.id}')" title="Reset row to auto">↺</button></div>`;
+  }).join('');
+  showModal(`
+    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Strokes</h2><button class="btn sm ghost" onclick="renderAdmin()">Done</button></div>
+    <div class="modal-b">
+      ${tabs}
+      <div class="muted" style="margin:-2px 0 8px">${esc(round.name)} · ${esc(c?.name||'Course')} — tap a cell to cycle <b>auto → 0 → 1 → 2 → 3 → auto</b>. Faint = auto from handicap, <b style="color:var(--gold)">gold</b> = your override.</div>
+      ${(!useHcp())?`<div class="banner">Handicaps are off — the whole event is gross, so the stroke sheet is ignored right now.</div>`:''}
+      <div class="eyebrow">Stroke index · which hole ranks 1 (hardest) – 18</div>
+      <div class="gscroll">${siEditor}</div>
+      <div class="eyebrow" style="margin-top:14px">Strokes per player</div>
+      <div class="gscroll"><div class="ggrid"><div class="grow ghead"><div class="gname">Hole · Par</div>${headCells}<div class="greset"></div></div>${rows}</div></div>
+      <div class="muted" style="font-size:11px;margin-top:8px">Dots drive net for singles, better ball, shramble and team total. Scramble &amp; foursomes are team formats (one side handicap), so per-player dots don't change those rounds.</div>
+    </div>`);
+}
+async function cycleStroke(rid,pid,h){
+  const ov=getStrokeOverride(rid,pid,h);
+  let next; if(ov==null) next=0; else if(ov>=3) next=null; else next=ov+1;
+  setStrokeOverrideLocal(rid,pid,h,next);
+  const round=State.config.rounds.find(r=>r.id===rid);
+  const cell=document.getElementById('sc-'+pid+'-'+h);
+  if(cell){ const tmp=document.createElement('div'); tmp.innerHTML=strokeCellHTML(rid,pid,round,h); const nc=tmp.firstElementChild; cell.className=nc.className; cell.textContent=nc.textContent; }
+  await saveConfig();
+}
+function setStrokeOverrideLocal(rid,pid,h,val){
+  State.config.strokeOverrides = State.config.strokeOverrides||{};
+  const so=State.config.strokeOverrides;
+  so[rid]=so[rid]||{}; so[rid][pid]=so[rid][pid]||{};
+  if(val==null){ delete so[rid][pid][h]; if(!Object.keys(so[rid][pid]).length) delete so[rid][pid]; }
+  else so[rid][pid][h]=val;
+}
+async function resetStrokeRow(rid,pid){
+  if(State.config.strokeOverrides?.[rid]?.[pid]){ delete State.config.strokeOverrides[rid][pid]; await saveConfig(); }
+  renderStrokeGrid(rid);
+}
+async function setCourseSI(cid,h,v){
+  const c=course(cid); if(!c) return; c.si=(c.si||[]).slice(); const n=Number(v);
+  if(n>=1&&n<=18){ c.si[h-1]=n; await saveConfig(); renderStrokeGrid(State.strokeRound); }
+}
+
+/* ============================================================
    ADMIN
    ============================================================ */
+function renderAdminGuide(){
+  const sec=(title,items)=>`<div style="margin-bottom:16px"><div class="eyebrow" style="color:var(--gold);margin-bottom:6px">${title}</div>${items.map(([h,b])=>`<div style="margin-bottom:9px"><b style="font-size:14px">${h}</b><div class="muted" style="font-size:12.5px;line-height:1.5;margin-top:1px">${b}</div></div>`).join('')}</div>`;
+  showModal(`
+    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center">
+      <h2>Commissioner's Guide</h2><button class="btn sm ghost" onclick="renderAdmin()">Back</button>
+    </div>
+    <div class="modal-b">
+      <p class="muted" style="line-height:1.55;margin:0 0 16px">Everything you run for the trip lives in this Control Room. Here's the whole thing, top to bottom. The rough order is: <b>roster → handicaps → captain vote → draft → pairings → play</b>.</p>
+
+      ${sec('Getting set up',[
+        ['Roster, teams &amp; handicaps','Add each player and their handicap index under <b>Players &amp; handicaps</b>. Players can also set their own index when they sign in on their phone — until you lock it (below). Name your two teams and pick their colors up top.'],
+        ['Lock handicaps','Once everyone\u2019s number is right, flip <b>Lock handicaps</b> so players can\u2019t change their index the night before. You can still edit anyone\u2019s.'],
+        ['Courses &amp; tees','Each course has selectable tees — pick the ones you\u2019re actually playing and the rating/slope (and everyone\u2019s course handicap) update automatically.'],
+      ])}
+
+      ${sec('Captains &amp; the draft',[
+        ['Captain vote','Everyone votes from the <b>Roster</b> tab — each person only sees their own vote. You see the full tally under <b>Captain vote results</b>, which stars the top two and can hand off straight into the draft.'],
+        ['Run the draft','<b>Run the draft</b> starts a commissioner-run snake draft: you tap each pick, everyone else watches a live board on the Roster tab. Undo fixes mistakes; <b>Reset</b> clears it to start over.'],
+      ])}
+
+      ${sec('Rounds, formats &amp; pairings',[
+        ['Formats','Six formats: Singles, Foursomes (alt-shot), Better Ball, Shramble, Scramble, and Team Total. Tap the ⓘ next to any format name (anywhere in the app) to see how it plays and how strokes work.'],
+        ['Split rounds','Toggle <b>Split at the turn</b> to run two different formats on one day — e.g. Team Total front nine, Singles back nine.'],
+        ['Pairings','For match formats, open <b>Pairings</b> and hit <b>Auto-pair</b> (or build matches by hand). Each match has a <b>start hole</b> for shotgun / weird send-offs — set it and that group\u2019s scorecard begins there.'],
+        ['Freeze a round','Freeze locks a finished round so nobody edits scores after the fact.'],
+      ])}
+
+      ${sec('Scoring controls',[
+        ['Handicaps on/off','The <b>Use handicaps</b> switch turns the whole event gross with one tap. Off = everything is gross and the stroke sheet is ignored.'],
+        ['Allowance &amp; scramble handicap','Set the % of handicap each format uses (singles 100, four-ball 85 are standard), and how a scramble side\u2019s handicap is figured (low ball, USGA 35/15, average, or scratch).'],
+        ['Points per match','Each match is worth 1 point (½ for a halve). Bump a segment\u2019s <b>pts/match</b> to make a day worth more.'],
+        ['Stroke sheet &amp; index','The heart of scoring. <b>Stroke index</b> sets which hole ranks 1–18 hardest. The <b>grid</b> shows every player\u2019s dots per hole — pre-filled from their handicap, tap any cell to override (auto → 0 → 1 → 2 → 3). Those dots are the single source of truth: net = gross minus dots, and in match play low net wins the hole.'],
+      ])}
+
+      ${sec('During play',[
+        ['Entering scores','Players tap <b>Enter Score</b>, pick their round/segment, and step through holes (Next wraps 18→1, Back too). They see their strokes, a dot on each stroke hole, and running gross + net. Captains can enter for their whole team.'],
+        ['The leaderboard','The tug-of-war shows <b>projected</b> points (live matches counted as if they ended now), with points-to-win and points up for grabs. <b>Matches</b> shows Ryder-Cup rows — highlighted side is up. <b>Players</b> shows the individual gross/net leaderboard.'],
+        ['Live sync','Everything syncs across phones automatically. The dot by your name is green when synced, amber when a phone is offline — scores queue and send themselves when signal returns.'],
+      ])}
+
+      ${sec('Handy',[
+        ['Demo preview','<b>Load demo data</b> fills every screen with realistic fake scores so you can see how it\u2019ll look mid-trip. It stays on your phone, never syncs, and isn\u2019t saved — tap <b>Exit demo</b> to clear it.'],
+        ['This is admin-only','This Control Room is behind a PIN. Players never see it — they just sign in, vote, and enter scores.'],
+      ])}
+
+      <button class="btn gold" style="margin-top:4px" onclick="renderAdmin()">Got it — back to Control Room</button>
+    </div>`);
+}
 function openAdmin(){
   if(State.adminAuthed) return renderAdmin();
   showModal(`<div class="modal-h"><h2>Admin PIN</h2><p class="muted" style="margin:4px 0 0">Enter the organizer's PIN to manage the trip.</p></div>
@@ -1624,6 +1784,7 @@ function renderAdmin(){
       <h2>Control Room</h2><button class="btn sm ghost" onclick="closeModal()">Done</button>
     </div>
     <div class="modal-b">
+      <button class="btn" style="width:100%;margin-bottom:16px;background:var(--ink);color:var(--light)" onclick="renderAdminGuide()">📖 Commissioner's Guide — how everything works</button>
       <div class="eyebrow">Teams</div>
       <div class="two" style="margin-bottom:14px">
         ${cfg.teams.map(t=>`<div class="field" style="margin:0"><label>Team name</label>
@@ -1670,6 +1831,7 @@ function renderAdmin(){
       <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:12px;color:${cfg.settings.hcpLocked?'var(--red)':'inherit'}">
         <input type="checkbox" ${cfg.settings.hcpLocked?'checked':''} onchange="setHcpLocked(this.checked)" style="width:20px;height:20px"/> 🔒 Lock handicaps — players can't change their index (you still can)
       </label>
+      <button class="btn ghost sm" style="width:100%;margin-bottom:12px" onclick="renderStrokeGrid()">🎯 Stroke sheet &amp; index — tweak who strokes where</button>
       <div class="field" style="margin:0 0 12px">
         <label>Scramble handicap</label>
         <select onchange="setScrambleHcp(this.value)">
