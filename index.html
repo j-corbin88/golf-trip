@@ -166,7 +166,9 @@ input,select{font-family:inherit;font-size:16px}
 .rxb{display:inline-flex;align-items:center;gap:3px;font-size:13px;line-height:1;padding:3px 7px;border-radius:999px;background:var(--paper2);border:1px solid transparent;color:var(--text)}
 .rxb.has{background:var(--paper);border-color:var(--line)}
 .rxb.on{border-color:var(--gold);background:rgba(229,168,35,.16)}
+.rxb.pick{font-size:15px;padding:4px 8px}
 .rxb span{font-size:10px;font-weight:700;font-family:'Oswald';color:var(--text-dim)}
+.rxadd{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:999px;background:var(--paper2);border:1px solid var(--line);color:var(--text-dim);font-size:14px;font-weight:700;line-height:1}
 .cup-burn{text-align:center;font-size:12px;font-style:italic;color:rgba(237,231,214,.68);margin-top:8px;line-height:1.4;min-height:16px}
 .chip{background:var(--paper2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:600;color:var(--text)}
 .match-head{display:flex;justify-content:space-between;padding:4px 6px 6px;font-family:'Oswald';font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
@@ -408,9 +410,17 @@ async function toggleReaction(mk, emoji){
 }
 function reactionBarHTML(mk){
   const counts=reactionsFor(mk), mine=myReaction(mk);
-  const btns=REACT_EMOJIS.map(e=>{ const n=counts[e]||0; return `<button class="rxb ${mine===e?'on':''} ${n?'has':''}" onclick="event.stopPropagation();toggleReaction('${mk}','${e}')">${e}${n?`<span>${n}</span>`:''}</button>`; }).join('');
-  return `<div class="rxbar" id="rx-${mk}">${btns}</div>`;
+  const chips=REACT_EMOJIS.filter(e=>counts[e]).map(e=>`<button class="rxb has ${mine===e?'on':''}" onclick="event.stopPropagation();toggleReaction('${mk}','${e}')">${e}${counts[e]>1?`<span>${counts[e]}</span>`:''}</button>`).join('');
+  return `<div class="rxbar" id="rx-${mk}">${chips}<button class="rxadd" onclick="event.stopPropagation();openReactPicker('${mk}')" title="Add a reaction">＋</button></div>`;
 }
+function openReactPicker(mk){
+  if(!State.me){ openIdentity(); return; }
+  const el=document.getElementById('rx-'+mk); if(!el) return;
+  const mine=myReaction(mk);
+  el.innerHTML = REACT_EMOJIS.map(e=>`<button class="rxb pick ${mine===e?'on':''}" onclick="event.stopPropagation();toggleReaction('${mk}','${e}')">${e}</button>`).join('')
+    + `<button class="rxadd" onclick="event.stopPropagation();closeReactPicker('${mk}')" title="Close">✕</button>`;
+}
+function closeReactPicker(mk){ const el=document.getElementById('rx-'+mk); if(el) el.outerHTML=reactionBarHTML(mk); }
 
 function autoTitle(pid){
   const withH=(State.config.players||[]).filter(p=>hcpOf(p.id)!=null);
@@ -1491,10 +1501,11 @@ function viewRoster(){
     const cap=roster.find(p=>p.isCaptain);
     const rows=roster.map(p=>{
       const ti=titleOf(p.id), canEdit=(State.adminAuthed||p.id===State.me);
-      const sub=[p.isCaptain?'Captain':'', ti].filter(Boolean).join(' · ');
+      const txt=[p.isCaptain?'Captain':'', ti].filter(Boolean).join(' · ');
+      const sub=(txt||canEdit)?`<span>${esc(txt)}${txt&&canEdit?' ':''}${canEdit?`<span style="opacity:.5">✏️${txt?'':' add title'}</span>`:''}</span>`:'';
       return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}>
         <div class="av">${avatarOf(p.id)}</div>
-        <div class="info"><b>${esc(p.name)}${canEdit?' <span style="opacity:.4">✏️</span>':''}</b>${sub?`<span>${esc(sub)}</span>`:''}</div>
+        <div class="info"><b>${esc(p.name)}</b>${sub}</div>
         <div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div>
       </div>`;
     }).join('') || '<div class="muted">No players assigned</div>';
@@ -1508,7 +1519,8 @@ function viewRoster(){
   const unassigned=players.filter(p=>!p.teamId).sort(cmpHcp);
   const un=unassigned.length?`<div class="card"><div class="eyebrow">${teams.some(t=>players.some(p=>p.teamId===t.id))?'Not on a team':'The Field · by handicap'}</div>${unassigned.map(p=>{
     const ti=titleOf(p.id), canEdit=(State.adminAuthed||p.id===State.me);
-    return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}${canEdit?' <span style="opacity:.4">✏️</span>':''}</b>${ti?`<span>${esc(ti)}</span>`:''}</div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`;
+    const sub=(ti||canEdit)?`<span>${esc(ti)}${ti&&canEdit?' ':''}${canEdit?`<span style="opacity:.5">✏️${ti?'':' add title'}</span>`:''}</span>`:'';
+    return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b>${sub}</div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`;
   }).join('')}</div>`:'';
   const mv=myVotes();
   const mvNames=mv.map(id=>player(id)?.name?.split(' ')[0]).filter(Boolean).join(' & ');
