@@ -159,8 +159,16 @@ input,select{font-family:inherit;font-size:16px}
 .status-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
 .divider{height:1px;background:var(--line);margin:14px 0}
 .fmt-blurb{font-size:12px;color:var(--text-dim);line-height:1.5;margin-top:6px}
-.match{display:flex;align-items:center;gap:6px;padding:7px 4px;border-bottom:1px solid var(--line)}
-.match:last-of-type{border-bottom:none}
+.match{display:flex;align-items:center;gap:6px;padding:7px 4px}
+.matchwrap{border-bottom:1px solid var(--line)}
+.matchwrap:last-of-type{border-bottom:none}
+.rxbar{display:flex;gap:4px;padding:0 4px 7px;flex-wrap:wrap}
+.rxb{display:inline-flex;align-items:center;gap:3px;font-size:13px;line-height:1;padding:3px 7px;border-radius:999px;background:var(--paper2);border:1px solid transparent;color:var(--text)}
+.rxb.has{background:var(--paper);border-color:var(--line)}
+.rxb.on{border-color:var(--gold);background:rgba(229,168,35,.16)}
+.rxb span{font-size:10px;font-weight:700;font-family:'Oswald';color:var(--text-dim)}
+.cup-burn{text-align:center;font-size:12px;font-style:italic;color:rgba(237,231,214,.68);margin-top:8px;line-height:1.4;min-height:16px}
+.chip{background:var(--paper2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:600;color:var(--text)}
 .match-head{display:flex;justify-content:space-between;padding:4px 6px 6px;font-family:'Oswald';font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
 .mside{flex:1;display:flex;align-items:center;gap:6px;min-width:0;padding:5px 6px;border-radius:9px}
 .mside.b{flex-direction:row;justify-content:flex-end;text-align:right}
@@ -384,6 +392,94 @@ function showFormatInfo(key){
     </div>`);
 }
 
+/* ---------- Humor: reactions, superlatives, burns, the Vault ---------- */
+const REACT_EMOJIS = ['🔥','💀','🐐','🚽','🍺','😴'];
+const matchKeyOf = (rid,segId,mid)=>`${rid}:${segId}:${mid}`;
+function reactionsFor(mk){ const out={}; Object.values(State.reactions).forEach(map=>{ const e=map&&map[mk]; if(e) out[e]=(out[e]||0)+1; }); return out; }
+function myReaction(mk){ return State.me ? (State.reactions[State.me]?.[mk]||null) : null; }
+async function toggleReaction(mk, emoji){
+  if(!State.me){ openIdentity(); return; }
+  const map={...(State.reactions[State.me]||{})};
+  if(map[mk]===emoji) delete map[mk]; else map[mk]=emoji;
+  State.reactions[State.me]=map;
+  await Store.set('react:'+State.me,{map});
+  const el=document.getElementById('rx-'+mk);
+  if(el){ el.outerHTML=reactionBarHTML(mk); } else if(State.view==='board'){ updateBoard(); }
+}
+function reactionBarHTML(mk){
+  const counts=reactionsFor(mk), mine=myReaction(mk);
+  const btns=REACT_EMOJIS.map(e=>{ const n=counts[e]||0; return `<button class="rxb ${mine===e?'on':''} ${n?'has':''}" onclick="event.stopPropagation();toggleReaction('${mk}','${e}')">${e}${n?`<span>${n}</span>`:''}</button>`; }).join('');
+  return `<div class="rxbar" id="rx-${mk}">${btns}</div>`;
+}
+
+function autoTitle(pid){
+  const withH=(State.config.players||[]).filter(p=>hcpOf(p.id)!=null);
+  if(withH.length>=3){
+    const s=[...withH].sort((a,b)=>hcpOf(a.id)-hcpOf(b.id));
+    if(s[0].id===pid) return 'The Ringer 🎯';
+    if(s[s.length-1].id===pid) return 'Max Strokes 🎒';
+  }
+  return '';
+}
+function titleOf(pid){ return State.titles[pid] || autoTitle(pid) || ''; }
+async function setTitle(pid, text){
+  text=(text||'').trim().slice(0,40);
+  if(text) State.titles[pid]=text; else delete State.titles[pid];
+  await Store.set('title:'+pid,{text});
+  closeModal(); render();
+}
+const TITLE_SUGGESTIONS=['The Sandbagger','Cart Path Only','Beer Cart MVP','Mr. Irrelevant','Three-Putt King','Snowman Collector ☃️','The Commish','Mathlete','Sunday Scaries','36.9 and Proud','The Ringer 🎯','Gimme Merchant'];
+function renderTitleEditor(pid){
+  if(!pid) return;
+  if(!(State.adminAuthed || pid===State.me)) return;
+  const cur=State.titles[pid]||'';
+  showModal(`<div class="modal-h"><h2>${esc(player(pid)?.name||'')}</h2><p class="muted" style="margin:4px 0 0">Give ${pid===State.me?'yourself':'them'} a superlative — it shows by the name for everyone.</p></div>
+    <div class="modal-b">
+      <div class="field"><input id="titleInput" maxlength="40" placeholder="e.g. The Sandbagger" value="${esc(cur)}"/></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${TITLE_SUGGESTIONS.map(t=>`<button class="chip" onclick="document.getElementById('titleInput').value=this.textContent">${esc(t)}</button>`).join('')}</div>
+      <button class="btn gold" onclick="setTitle('${pid}',document.getElementById('titleInput').value)">Save</button>
+      ${cur?`<button class="btn ghost" style="margin-top:8px" onclick="setTitle('${pid}','')">Clear title</button>`:''}
+    </div>`);
+}
+
+function scanHoles(cb){
+  (State.config.rounds||[]).forEach(r=>{ const c=courseOf(r), pars=c?.pars||[]; segsOf(r).forEach(seg=>{ if(!seg.format||FORMATS[seg.format]?.side==='group') return; (State.config.players||[]).forEach(p=>{ const card=State.cards[cardKey(r.id,seg.id,p.id)]; if(!card?.holes) return; Object.keys(card.holes).forEach(h=>{ const g=card.holes[h]; if(g==null) return; cb({pid:p.id, round:r, hole:Number(h), gross:g, par:pars[h-1]||4}); }); }); }); });
+}
+function worstHole(){ let w=null; scanHoles(o=>{ const over=o.gross-o.par; if(!w||over>w.over) w={...o,over}; }); return w; }
+function burnLine(){
+  const {A,B,pA,pB}=boardStats(), avail=pointsAvailable();
+  if(avail<=0) return "🏌️ Set the formats and let's make someone cry.";
+  const diff=Math.abs(pA-pB), leader=pA>pB?A:B, trailer=pA>pB?B:A;
+  let lines;
+  if(pA===pB) lines=["All square — tighter than a range-ball dimple.","Deadlocked. Somebody grow a spine.","Even Steven, and everyone's nervous."];
+  else if(diff>=Math.max(2,avail/3)) lines=[`🧹 ${esc(leader.name)} is out shopping for brooms.`,`${esc(leader.name)} is treating this like a charity scramble.`,`Someone check on ${esc(trailer.name)} — bring snacks.`];
+  else lines=[`${esc(leader.name)} nudges ahead — don't get comfy.`,`${esc(leader.name)} leads, but choke season is undefeated.`,`${esc(leader.name)} up. ${esc(trailer.name)} still has a pulse.`];
+  const bw=worstHole(); if(bw && bw.over>=4) lines.push(`☃️ ${esc(displayName(bw.pid))} made a ${bw.gross} on a par ${bw.par}. Bold.`);
+  const key=`${Math.round(pA*2)}_${Math.round(pB*2)}_${lines.length}`;
+  const idx=[...key].reduce((a,c)=>a+c.charCodeAt(0),0)%lines.length;
+  return lines[idx];
+}
+
+function playerRoundStat(round, pid){
+  const c=courseOf(round), pars=c?.pars||[]; let gross=0,net=0,thru=0,blow=0,parPlayed=0,any=false;
+  segsOf(round).forEach(seg=>{ if(!seg.format||FORMATS[seg.format]?.side==='group') return; const card=State.cards[cardKey(round.id,seg.id,pid)]; if(!card?.holes) return; Object.keys(card.holes).forEach(h=>{ const g=card.holes[h]; if(g==null) return; any=true; gross+=g; thru++; const par=pars[h-1]||4; parPlayed+=par; if(g-par>=3) blow++; }); const n=netForCard(pid,card,false,round,seg.format); if(n!=null) net+=n; });
+  return any?{pid,gross,net,thru,blow,parPlayed}:null;
+}
+function roundGoats(round){
+  const stats=(State.config.players||[]).map(p=>playerRoundStat(round,p.id)).filter(s=>s&&s.thru>=3);
+  if(!stats.length) return null;
+  const byNet=[...stats].sort((a,b)=>a.net-b.net);
+  return { hero:byNet[0], goat:byNet[byNet.length-1] };
+}
+function shameStats(){
+  const worst=worstHole();
+  const blowCount={}; scanHoles(o=>{ if(o.gross-o.par>=3) blowCount[o.pid]=(blowCount[o.pid]||0)+1; });
+  let mostBlow=null; Object.entries(blowCount).forEach(([pid,n])=>{ if(!mostBlow||n>mostBlow.n) mostBlow={pid,n}; });
+  const totalNet={}; (State.config.players||[]).forEach(p=>{ let s=0,any=false; (State.config.rounds||[]).forEach(r=>{ const st=playerRoundStat(r,p.id); if(st){ s+=st.net; any=true; } }); if(any) totalNet[p.id]=s; });
+  let dfl=null; Object.entries(totalNet).forEach(([pid,n])=>{ if(!dfl||n>dfl.n) dfl={pid,n}; });
+  return { worst, mostBlow, dfl };
+}
+
 /* ---------- State ---------- */
 const TRIP_ROSTER = [
   'Eric Noto','Andrew Smith','John Schmeer','Chris Hillis','Devin Velnoskey',
@@ -503,7 +599,9 @@ const State = {
   config:null,
   avatars:{},   // playerId -> emoji  (from avatar:* blobs)
   hcps:{},      // playerId -> handicap index (from hcp:* blobs)
-  votes:{},     // voterId -> candidate playerId (from vote:* blobs)
+  votes:{},     // voterId -> [candidate playerIds] (from vote:* blobs)
+  reactions:{}, // voterId -> { matchKey: emoji } (from react:* blobs)
+  titles:{},    // playerId -> superlative text (from title:* blobs)
   cards:{},     // 'card:round:side' -> {holes,enteredBy,updatedAt}
   me:null,      // playerId
   view:'board',
@@ -802,6 +900,12 @@ async function loadAll(){
   State.votes={};
   const vs=await Store.list('vote:');
   Object.entries(vs).forEach(([k,v])=>{ const a=Array.isArray(v?.choices)?v.choices.filter(Boolean):(v?.choice?[v.choice]:[]); if(a.length) State.votes[k.split(':')[1]]=a; });
+  State.reactions={};
+  const rx=await Store.list('react:');
+  Object.entries(rx).forEach(([k,v])=>{ if(v?.map) State.reactions[k.split(':')[1]]=v.map; });
+  State.titles={};
+  const ti=await Store.list('title:');
+  Object.entries(ti).forEach(([k,v])=>{ if(v?.text) State.titles[k.split(':')[1]]=v.text; });
   State.cards=await Store.list('card:');
   State.me=Device.get('me');
   if(!State.activeRound) State.activeRound=(cfg.rounds.find(r=>roundLive(r))||cfg.rounds[0])?.id;
@@ -818,6 +922,10 @@ async function refresh(){
     State.hcps={}; Object.entries(hs).forEach(([k,v])=>{ if(v?.index!=null) State.hcps[k.split(':')[1]]=v.index; });
     const vs=await Store.list('vote:');
     State.votes={}; Object.entries(vs).forEach(([k,v])=>{ const a=Array.isArray(v?.choices)?v.choices.filter(Boolean):(v?.choice?[v.choice]:[]); if(a.length) State.votes[k.split(':')[1]]=a; });
+    const rx=await Store.list('react:');
+    State.reactions={}; Object.entries(rx).forEach(([k,v])=>{ if(v?.map) State.reactions[k.split(':')[1]]=v.map; });
+    const ti=await Store.list('title:');
+    State.titles={}; Object.entries(ti).forEach(([k,v])=>{ if(v?.text) State.titles[k.split(':')[1]]=v.text; });
     State.cards=await Store.list('card:');
     const cfg=await Store.get('config'); if(cfg){ State.config=cfg; }
     updateSyncDot(Store.status());
@@ -974,6 +1082,7 @@ function cupHTML(){
     </div>
     <div class="meter"><div class="fillL" id="fillL" style="width:${lp}%;background:${A.color}"></div><div class="fillR" id="fillR" style="width:${100-lp}%;background:${B.color}"></div><div class="mid"></div></div>
     <div class="cup-foot" id="cupFoot">${cupFootText()}</div>
+    <div class="cup-burn" id="cupBurn">${burnLine()}</div>
   </div>`;
 }
 function cupFootText(){
@@ -1085,6 +1194,7 @@ function updateBoard(){
   if(pl) pl.textContent=fmtPts(pA);
   if(pr) pr.textContent=fmtPts(pB);
   const foot=document.getElementById('cupFoot'); if(foot) foot.textContent=cupFootText();
+  const burn=document.getElementById('cupBurn'); if(burn) burn.textContent=burnLine();
   const st=document.getElementById('syncStatus'); if(st) st.innerHTML=statusInnerHTML();
   body.innerHTML=boardBodyHTML();
 }
@@ -1126,11 +1236,12 @@ function segMatchBoard(round,seg){
     const rightUp = res.played>0 && (aIsLeft ? res.diff<0 : res.diff>0);
     const statusTxt = res.played===0 ? '—' : matchStatusText(res);
     const sp=matchStatusParts(res);
-    return `<div class="match">
+    const mk=matchKeyOf(round.id, seg.id, m.id);
+    return `<div class="matchwrap"><div class="match">
       <div class="mside ${leftUp?'win':''}" style="--tc:${TA.color};${leftUp?'background:'+tint(TA.color,.2):''}">${avs(left)}${nms(left)}</div>
       <div class="mstatus">${res.played===0?'<span class="pre">—</span>':`<b>${esc(sp.main)}</b>${sp.sub?`<span class="ssub">${esc(sp.sub)}</span>`:''}`}</div>
       <div class="mside b ${rightUp?'win':''}" style="--tc:${TB.color};${rightUp?'background:'+tint(TB.color,.2):''}">${nms(right)}${avs(right)}</div>
-    </div>`;
+    </div>${reactionBarHTML(mk)}</div>`;
   }).join('');
   return `<div class="card">${head}${rows?matchHead+rows:'<div class="muted">No matches set for this segment.</div>'}
     <div class="muted" style="margin-top:8px;font-size:11px">The highlighted side is up. "AS" = all square · "2 UP · thru 5" = 2 holes ahead through 5 · "3&2" = won by 3 with 2 to play.</div>
@@ -1378,11 +1489,15 @@ function viewRoster(){
   const blocks=teams.map(t=>{
     const roster=players.filter(p=>p.teamId===t.id).sort(cmpCapHcp);
     const cap=roster.find(p=>p.isCaptain);
-    const rows=roster.map(p=>`<div class="roster-item">
-      <div class="av">${avatarOf(p.id)}</div>
-      <div class="info"><b>${esc(p.name)}</b>${p.isCaptain?'<span>Captain</span>':''}</div>
-      <div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div>
-    </div>`).join('') || '<div class="muted">No players assigned</div>';
+    const rows=roster.map(p=>{
+      const ti=titleOf(p.id), canEdit=(State.adminAuthed||p.id===State.me);
+      const sub=[p.isCaptain?'Captain':'', ti].filter(Boolean).join(' · ');
+      return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}>
+        <div class="av">${avatarOf(p.id)}</div>
+        <div class="info"><b>${esc(p.name)}${canEdit?' <span style="opacity:.4">✏️</span>':''}</b>${sub?`<span>${esc(sub)}</span>`:''}</div>
+        <div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div>
+      </div>`;
+    }).join('') || '<div class="muted">No players assigned</div>';
     return `<div class="card">
       <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
         <span class="teamdot" style="width:12px;height:12px;background:${t.color}"></span>
@@ -1418,11 +1533,7 @@ function viewMore(){
     <div class="muted">${esc(s.checkIn||'')}</div>
     <div class="muted" style="margin-top:8px">Oct 22–25, 2026 · 16 golfers${s.bookingRef?' · Ref '+esc(s.bookingRef):''}</div>
   </div>
-  <div class="card">
-    <div class="eyebrow">The Vault</div>
-    <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:4px">League Records</h3>
-    <p class="muted">15 years of the fantasy league, now on the course. Past champions and the all-time Cup record will live here — tell me the history and I'll load it in.</p>
-  </div>
+  ${vaultHTML()}
   <div class="card">
     <div class="eyebrow">Run the Trip</div>
     <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:4px">Admin</h3>
@@ -1431,6 +1542,29 @@ function viewMore(){
   </div>
   <div class="muted" style="text-align:center;font-size:11px">The Cup · Myrtle Beach 2026 · built for the Blakefield ’06 crew</div>
   `;
+}
+function vaultHTML(){
+  const sh=shameStats();
+  const nm=(pid)=>esc(displayName(pid));
+  const shameRow=(emoji,label,val)=> val ? `<div class="roster-item"><div class="av">${emoji}</div><div class="info"><b>${label}</b><span>${val}</span></div></div>` : '';
+  const rows=[
+    sh.worst && sh.worst.over>=2 ? shameRow('☃️','Biggest blow-up', `${nm(sh.worst.pid)} — ${sh.worst.gross} on a par ${sh.worst.par} (+${sh.worst.over})`) : '',
+    sh.mostBlow && sh.mostBlow.n>=2 ? shameRow('🧨','Most blow-up holes', `${nm(sh.mostBlow.pid)} — ${sh.mostBlow.n} holes at +3 or worse`) : '',
+    sh.dfl ? shameRow('🚽','Dead last (net)', `${nm(sh.dfl.pid)} — worst combined net so far`) : '',
+  ].filter(Boolean).join('');
+  // per-round goats
+  const goatCards=(State.config.rounds||[]).map(r=>{
+    if(!roundLive(r)) return '';
+    const g=roundGoats(r); if(!g) return '';
+    return `<div class="roster-item"><div class="av">🐐</div><div class="info"><b>${esc(r.name)} — Today's Goat</b><span>${nm(g.hero.pid)} (best net) · 🚽 ${nm(g.goat.pid)} (worst net)</span></div></div>`;
+  }).filter(Boolean).join('');
+  const body = (rows||goatCards) ? `${rows}${goatCards}` : `<p class="muted">Nobody's embarrassed themselves yet. The range balls miss you.</p>`;
+  return `<div class="card">
+    <div class="eyebrow">The Vault</div>
+    <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:8px">Wall of Shame</h3>
+    ${body}
+    <div class="muted" style="font-size:11px;margin-top:8px">Auto-tracked from live scores. Superlatives are set on the Roster tab (tap a name).</div>
+  </div>`;
 }
 
 /* ============================================================
