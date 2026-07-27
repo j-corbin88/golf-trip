@@ -801,7 +801,7 @@ async function loadAll(){
   Object.entries(hs).forEach(([k,v])=>{ if(v?.index!=null) State.hcps[k.split(':')[1]]=v.index; });
   State.votes={};
   const vs=await Store.list('vote:');
-  Object.entries(vs).forEach(([k,v])=>{ if(v?.choice) State.votes[k.split(':')[1]]=v.choice; });
+  Object.entries(vs).forEach(([k,v])=>{ const a=Array.isArray(v?.choices)?v.choices.filter(Boolean):(v?.choice?[v.choice]:[]); if(a.length) State.votes[k.split(':')[1]]=a; });
   State.cards=await Store.list('card:');
   State.me=Device.get('me');
   if(!State.activeRound) State.activeRound=(cfg.rounds.find(r=>roundLive(r))||cfg.rounds[0])?.id;
@@ -817,7 +817,7 @@ async function refresh(){
     const hs=await Store.list('hcp:');
     State.hcps={}; Object.entries(hs).forEach(([k,v])=>{ if(v?.index!=null) State.hcps[k.split(':')[1]]=v.index; });
     const vs=await Store.list('vote:');
-    State.votes={}; Object.entries(vs).forEach(([k,v])=>{ if(v?.choice) State.votes[k.split(':')[1]]=v.choice; });
+    State.votes={}; Object.entries(vs).forEach(([k,v])=>{ const a=Array.isArray(v?.choices)?v.choices.filter(Boolean):(v?.choice?[v.choice]:[]); if(a.length) State.votes[k.split(':')[1]]=a; });
     State.cards=await Store.list('card:');
     const cfg=await Store.get('config'); if(cfg){ State.config=cfg; }
     updateSyncDot(Store.status());
@@ -1392,13 +1392,14 @@ function viewRoster(){
   }).join('');
   const unassigned=players.filter(p=>!p.teamId).sort(cmpHcp);
   const un=unassigned.length?`<div class="card"><div class="eyebrow">${teams.some(t=>players.some(p=>p.teamId===t.id))?'Not on a team':'The Field · by handicap'}</div>${unassigned.map(p=>`<div class="roster-item"><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b></div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`).join('')}</div>`:'';
-  const mv=myVote();
+  const mv=myVotes();
+  const mvNames=mv.map(id=>player(id)?.name?.split(' ')[0]).filter(Boolean).join(' & ');
   const voteCard = (d.status==='none') ? `<div class="card">
     <div class="eyebrow">Captain Vote</div>
-    <h3 style="font-size:18px;text-transform:uppercase;margin-bottom:6px">Who should captain?</h3>
+    <h3 style="font-size:18px;text-transform:uppercase;margin-bottom:6px">Vote for two captains</h3>
     ${State.me
-      ? (mv ? `<p class="muted" style="margin-bottom:10px">You voted for <b style="color:var(--text)">${esc(player(mv)?.name||'')}</b>.</p><button class="btn ghost" onclick="renderVoteModal()">Change my vote</button>`
-            : `<button class="btn gold" onclick="renderVoteModal()">Cast your vote</button>`)
+      ? (mv.length ? `<p class="muted" style="margin-bottom:10px">You picked <b style="color:var(--text)">${esc(mvNames)}</b>${mv.length<2?' — you have one more pick':''}.</p><button class="btn ${mv.length<2?'gold':'ghost'}" onclick="renderVoteModal()">${mv.length<2?'Use your second pick':'Change my picks'}</button>`
+            : `<button class="btn gold" onclick="renderVoteModal()">Cast your two votes</button>`)
       : `<button class="btn gold" onclick="openIdentity()">Sign in to vote</button>`}
     <p class="muted" style="margin-top:10px;font-size:11px">${voteCount()} of ${players.length} have voted · the commissioner tallies the results.</p>
   </div>` : '';
@@ -1436,26 +1437,35 @@ function viewMore(){
    CAPTAIN VOTE (everyone votes; each sees only their own vote;
    full breakdown is admin-only and can seed the draft)
    ============================================================ */
-function myVote(){ return State.me ? State.votes[State.me] : null; }
-function voteTally(){ const t={}; Object.values(State.votes).forEach(c=>{ if(c) t[c]=(t[c]||0)+1; }); return t; }
+function myVotes(){ return (State.me && State.votes[State.me]) ? State.votes[State.me] : []; }
+function voteTally(){ const t={}; Object.values(State.votes).forEach(arr=>{ (arr||[]).forEach(c=>{ if(c) t[c]=(t[c]||0)+1; }); }); return t; }
 function voteTopN(n){ return Object.entries(voteTally()).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([id])=>id); }
-function voteCount(){ return Object.keys(State.votes).filter(k=>State.votes[k]).length; }
-async function castVote(choiceId){
+function voteCount(){ return Object.keys(State.votes).filter(k=>(State.votes[k]||[]).length>0).length; }
+async function toggleVote(choiceId){
   if(!State.me) return;
-  State.votes[State.me]=choiceId;
-  await Store.set('vote:'+State.me,{choice:choiceId, at:Date.now()});
-  closeModal(); render();
+  let cur=(State.votes[State.me]||[]).slice();
+  if(cur.includes(choiceId)) cur=cur.filter(x=>x!==choiceId);
+  else { if(cur.length>=2) return; cur.push(choiceId); }
+  State.votes[State.me]=cur;
+  await Store.set('vote:'+State.me,{choices:cur, at:Date.now()});
+  renderVoteModal();
 }
 function renderVoteModal(){
   if(!State.me){ openIdentity(); return; }
-  const mine=myVote();
-  const rows=(State.config.players||[]).map(p=>`<button onclick="castVote('${p.id}')" style="display:flex;align-items:center;gap:9px;padding:11px;border-radius:10px;background:${p.id===mine?'var(--ink)':'#fff'};color:${p.id===mine?'var(--light)':'var(--text)'};border:1px solid var(--line);text-align:left;font-weight:600;width:100%;margin-bottom:7px">
-    <span style="width:26px;height:26px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:15px">${avatarOf(p.id)}</span>
-    <span style="flex:1">${esc(p.name)}</span>${p.id===mine?'<span class="tag" style="background:var(--gold);color:var(--ink)">Your pick</span>':''}
-  </button>`).join('');
-  showModal(`<div class="modal-h"><h2>Vote for a captain</h2><p class="muted" style="margin:4px 0 0">Your vote is private — only the commissioner sees the tally. You can change it anytime.</p></div>
-    <div class="modal-b">${rows}
-      <button class="btn ghost" style="margin-top:4px" onclick="closeModal()">Done</button>
+  const mine=myVotes();
+  const rows=(State.config.players||[]).map(p=>{
+    const on=mine.includes(p.id);
+    const atCap = !on && mine.length>=2;
+    return `<button onclick="toggleVote('${p.id}')" ${atCap?'style="opacity:.4"':''} style="display:flex;align-items:center;gap:9px;padding:11px;border-radius:10px;background:${on?'var(--ink)':'#fff'};color:${on?'var(--light)':'var(--text)'};border:1px solid ${on?'var(--gold)':'var(--line)'};text-align:left;font-weight:600;width:100%;margin-bottom:7px;${atCap?'opacity:.45':''}">
+      <span style="width:26px;height:26px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:15px">${avatarOf(p.id)}</span>
+      <span style="flex:1">${esc(p.name)}</span>${on?'<span class="tag" style="background:var(--gold);color:var(--ink)">✓ Picked</span>':''}
+    </button>`;
+  }).join('');
+  showModal(`<div class="modal-h"><h2>Vote for two captains</h2><p class="muted" style="margin:4px 0 0">Pick <b>two</b>. Your votes are private — only the commissioner sees the tally. Tap again to unpick; change anytime.</p></div>
+    <div class="modal-b">
+      <div class="eyebrow" style="margin-bottom:8px">${mine.length} of 2 selected${mine.length===2?' ✓':''}</div>
+      ${rows}
+      <button class="btn ${mine.length?'gold':'ghost'}" style="margin-top:4px" onclick="closeModal()">Done</button>
     </div>`);
 }
 function renderVoteResults(){
@@ -1463,19 +1473,20 @@ function renderVoteResults(){
   const ranked=Object.entries(tally).sort((a,b)=>b[1]-a[1]);
   const top2=new Set(ranked.slice(0,2).map(([id])=>id));
   const total=voteCount(), roster=(State.config.players||[]).length;
+  const bothCount=Object.values(State.votes).filter(a=>(a||[]).length>=2).length;
   const tallyRows = ranked.length ? ranked.map(([pid,n])=>{
-    const voters=Object.entries(State.votes).filter(([,c])=>c===pid).map(([vid])=>player(vid)?.name?.split(' ')[0]||'?').join(', ');
+    const voters=Object.entries(State.votes).filter(([,arr])=>(arr||[]).includes(pid)).map(([vid])=>player(vid)?.name?.split(' ')[0]||'?').join(', ');
     return `<div class="roster-item">
       <div class="av">${avatarOf(pid)}</div>
       <div class="info"><b>${esc(player(pid)?.name||'?')}${top2.has(pid)?' ⭐':''}</b><span>${esc(voters)}</span></div>
       <div class="hcp"><b>${n}</b><span>VOTES</span></div>
     </div>`;
   }).join('') : '<div class="muted">No votes yet.</div>';
-  const nonVoters=(State.config.players||[]).filter(p=>!State.votes[p.id]).map(p=>p.name.split(' ')[0]);
+  const nonVoters=(State.config.players||[]).filter(p=>!(State.votes[p.id]||[]).length).map(p=>p.name.split(' ')[0]);
   showModal(`
     <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Captain Vote</h2><button class="btn sm ghost" onclick="renderAdmin()">Back</button></div>
     <div class="modal-b">
-      <div class="muted" style="margin-bottom:10px">${total} of ${roster} have voted. ⭐ marks the current top two.</div>
+      <div class="muted" style="margin-bottom:10px">${total} of ${roster} have voted (${bothCount} used both picks). Each person votes for two. ⭐ marks the current top two.</div>
       <button class="btn ghost sm" style="width:100%;margin-bottom:12px" onclick="refresh().then(renderVoteResults)">↻ Refresh results</button>
       <div class="eyebrow">Tally · who voted for whom</div>
       <div style="margin-bottom:12px">${tallyRows}</div>
