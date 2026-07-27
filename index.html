@@ -1506,7 +1506,10 @@ function viewRoster(){
       </div>${rows}</div>`;
   }).join('');
   const unassigned=players.filter(p=>!p.teamId).sort(cmpHcp);
-  const un=unassigned.length?`<div class="card"><div class="eyebrow">${teams.some(t=>players.some(p=>p.teamId===t.id))?'Not on a team':'The Field · by handicap'}</div>${unassigned.map(p=>`<div class="roster-item"><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b></div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`).join('')}</div>`:'';
+  const un=unassigned.length?`<div class="card"><div class="eyebrow">${teams.some(t=>players.some(p=>p.teamId===t.id))?'Not on a team':'The Field · by handicap'}</div>${unassigned.map(p=>{
+    const ti=titleOf(p.id), canEdit=(State.adminAuthed||p.id===State.me);
+    return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}${canEdit?' <span style="opacity:.4">✏️</span>':''}</b>${ti?`<span>${esc(ti)}</span>`:''}</div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`;
+  }).join('')}</div>`:'';
   const mv=myVotes();
   const mvNames=mv.map(id=>player(id)?.name?.split(' ')[0]).filter(Boolean).join(' & ');
   const voteCard = (d.status==='none') ? `<div class="card">
