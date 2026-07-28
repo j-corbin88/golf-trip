@@ -153,6 +153,8 @@ input,select{font-family:inherit;font-size:16px}
 .roster-item .hcp b{font-size:19px;font-weight:700;display:block;color:var(--text)}
 .roster-item .hcp span{font-size:9px;letter-spacing:.12em;color:var(--text-dim)}
 .tag{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--ink);color:var(--light)}
+.vbox{flex:none;width:22px;height:22px;border-radius:6px;border:2px solid var(--line);display:grid;place-items:center;font-size:14px;font-weight:800;color:#fff}
+.vbox.on{background:var(--gold);border-color:var(--gold)}
 .empty{text-align:center;padding:28px 16px;color:var(--text-dim)}
 .empty .big{font-size:34px;margin-bottom:8px}
 .banner{background:rgba(229,168,35,.14);border:1px solid rgba(229,168,35,.4);color:#7a5a10;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:14px}
@@ -431,24 +433,39 @@ function autoTitle(pid){
   }
   return '';
 }
-function titleOf(pid){ return State.titles[pid] || autoTitle(pid) || ''; }
+const NO_TITLE = '\u2205'; // sentinel: player/admin explicitly hid the title, don't fall back to auto
+function titleOf(pid){
+  const t=State.titles[pid];
+  if(t===NO_TITLE) return '';
+  return t || autoTitle(pid) || '';
+}
 async function setTitle(pid, text){
   text=(text||'').trim().slice(0,40);
-  if(text) State.titles[pid]=text; else delete State.titles[pid];
-  await Store.set('title:'+pid,{text});
+  if(text) State.titles[pid]=text; else State.titles[pid]=NO_TITLE;   // explicit clear, not just "no override"
+  await Store.set('title:'+pid,{text: text||NO_TITLE});
+  closeModal(); render();
+}
+async function resetTitleAuto(pid){
+  delete State.titles[pid];
+  await Store.del('title:'+pid);
   closeModal(); render();
 }
 const TITLE_SUGGESTIONS=['The Sandbagger','Cart Path Only','Beer Cart MVP','Mr. Irrelevant','Three-Putt King','Snowman Collector ☃️','The Commish','Mathlete','Sunday Scaries','36.9 and Proud','The Ringer 🎯','Gimme Merchant'];
 function renderTitleEditor(pid){
   if(!pid) return;
   if(!(State.adminAuthed || pid===State.me)) return;
-  const cur=State.titles[pid]||'';
-  showModal(`<div class="modal-h"><h2>${esc(player(pid)?.name||'')}</h2><p class="muted" style="margin:4px 0 0">Give ${pid===State.me?'yourself':'them'} a superlative — it shows by the name for everyone.</p></div>
+  const raw=State.titles[pid];               // undefined = auto, NO_TITLE = explicitly hidden, string = manual
+  const manual = (raw && raw!==NO_TITLE) ? raw : '';
+  const auto = autoTitle(pid);
+  const shown = titleOf(pid);
+  const hint = raw===NO_TITLE ? 'Currently hidden.' : (!manual && auto ? `Currently showing the automatic title: <b>${esc(auto)}</b>.` : '');
+  showModal(`<div class="modal-h"><h2>${esc(player(pid)?.name||'')}</h2><p class="muted" style="margin:4px 0 0">Give ${pid===State.me?'yourself':'them'} a superlative — it shows by the name for everyone. ${hint}</p></div>
     <div class="modal-b">
-      <div class="field"><input id="titleInput" maxlength="40" placeholder="e.g. The Sandbagger" value="${esc(cur)}"/></div>
+      <div class="field"><input id="titleInput" maxlength="40" placeholder="e.g. The Sandbagger" value="${esc(manual)}"/></div>
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">${TITLE_SUGGESTIONS.map(t=>`<button class="chip" onclick="document.getElementById('titleInput').value=this.textContent">${esc(t)}</button>`).join('')}</div>
       <button class="btn gold" onclick="setTitle('${pid}',document.getElementById('titleInput').value)">Save</button>
-      ${cur?`<button class="btn ghost" style="margin-top:8px" onclick="setTitle('${pid}','')">Clear title</button>`:''}
+      ${shown?`<button class="btn ghost" style="margin-top:8px" onclick="setTitle('${pid}','')">Remove title — show nothing</button>`:''}
+      ${(raw!==undefined && auto)?`<button class="btn ghost" style="margin-top:8px" onclick="resetTitleAuto('${pid}')">Restore automatic (${esc(auto)})</button>`:''}
     </div>`);
 }
 
@@ -1502,7 +1519,7 @@ function viewRoster(){
     const rows=roster.map(p=>{
       const ti=titleOf(p.id), canEdit=(State.adminAuthed||p.id===State.me);
       const txt=[p.isCaptain?'Captain':'', ti].filter(Boolean).join(' · ');
-      const sub=(txt||canEdit)?`<span>${esc(txt)}${txt&&canEdit?' ':''}${canEdit?`<span style="opacity:.5">✏️${txt?'':' add title'}</span>`:''}</span>`:'';
+      const sub=(txt||canEdit)?`<span>${esc(txt)}${txt&&canEdit?' ':''}${canEdit?`<b style="opacity:.5;font-weight:400">✏️${txt?'':' add title'}</b>`:''}</span>`:'';
       return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}>
         <div class="av">${avatarOf(p.id)}</div>
         <div class="info"><b>${esc(p.name)}</b>${sub}</div>
@@ -1519,7 +1536,7 @@ function viewRoster(){
   const unassigned=players.filter(p=>!p.teamId).sort(cmpHcp);
   const un=unassigned.length?`<div class="card"><div class="eyebrow">${teams.some(t=>players.some(p=>p.teamId===t.id))?'Not on a team':'The Field · by handicap'}</div>${unassigned.map(p=>{
     const ti=titleOf(p.id), canEdit=(State.adminAuthed||p.id===State.me);
-    const sub=(ti||canEdit)?`<span>${esc(ti)}${ti&&canEdit?' ':''}${canEdit?`<span style="opacity:.5">✏️${ti?'':' add title'}</span>`:''}</span>`:'';
+    const sub=(ti||canEdit)?`<span>${esc(ti)}${ti&&canEdit?' ':''}${canEdit?`<b style="opacity:.5;font-weight:400">✏️${ti?'':' add title'}</b>`:''}</span>`:'';
     return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b>${sub}</div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`;
   }).join('')}</div>`:'';
   const mv=myVotes();
@@ -1590,14 +1607,14 @@ function myVotes(){ return (State.me && State.votes[State.me]) ? State.votes[Sta
 function voteTally(){ const t={}; Object.values(State.votes).forEach(arr=>{ (arr||[]).forEach(c=>{ if(c) t[c]=(t[c]||0)+1; }); }); return t; }
 function voteTopN(n){ return Object.entries(voteTally()).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([id])=>id); }
 function voteCount(){ return Object.keys(State.votes).filter(k=>(State.votes[k]||[]).length>0).length; }
-async function toggleVote(choiceId){
+function toggleVote(choiceId){
   if(!State.me) return;
   let cur=(State.votes[State.me]||[]).slice();
   if(cur.includes(choiceId)) cur=cur.filter(x=>x!==choiceId);
   else { if(cur.length>=2) return; cur.push(choiceId); }
   State.votes[State.me]=cur;
-  await Store.set('vote:'+State.me,{choices:cur, at:Date.now()});
-  renderVoteModal();
+  renderVoteModal();   // update the screen instantly — don't wait on the network
+  Store.set('vote:'+State.me,{choices:cur, at:Date.now()});   // syncs in the background; queues + retries if offline
 }
 function renderVoteModal(){
   if(!State.me){ openIdentity(); return; }
@@ -1605,9 +1622,10 @@ function renderVoteModal(){
   const rows=(State.config.players||[]).map(p=>{
     const on=mine.includes(p.id);
     const atCap = !on && mine.length>=2;
-    return `<button onclick="toggleVote('${p.id}')" ${atCap?'style="opacity:.4"':''} style="display:flex;align-items:center;gap:9px;padding:11px;border-radius:10px;background:${on?'var(--ink)':'#fff'};color:${on?'var(--light)':'var(--text)'};border:1px solid ${on?'var(--gold)':'var(--line)'};text-align:left;font-weight:600;width:100%;margin-bottom:7px;${atCap?'opacity:.45':''}">
-      <span style="width:26px;height:26px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:15px">${avatarOf(p.id)}</span>
-      <span style="flex:1">${esc(p.name)}</span>${on?'<span class="tag" style="background:var(--gold);color:var(--ink)">✓ Picked</span>':''}
+    return `<button onclick="toggleVote('${p.id}')" ${atCap?'disabled':''} style="display:flex;align-items:center;gap:10px;padding:12px;border-radius:10px;background:${on?'var(--paper2)':'#fff'};color:var(--text);border:1px solid ${on?'var(--gold)':'var(--line)'};text-align:left;font-weight:600;width:100%;margin-bottom:7px;${atCap?'opacity:.4':''}">
+      <span class="vbox ${on?'on':''}">${on?'✓':''}</span>
+      <span style="width:26px;height:26px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:15px;flex:none">${avatarOf(p.id)}</span>
+      <span style="flex:1">${esc(p.name)}</span>
     </button>`;
   }).join('');
   showModal(`<div class="modal-h"><h2>Vote for two captains</h2><p class="muted" style="margin:4px 0 0">Pick <b>two</b>. Your votes are private — only the commissioner sees the tally. Tap again to unpick; change anytime.</p></div>
