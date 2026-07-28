@@ -1102,8 +1102,11 @@ async function loadAll(){
   document.getElementById('tripTitle').textContent=cfg.settings.tripName||'The Cup';
   document.getElementById('tripSub').textContent=cfg.settings.tripSub||'';
 }
+let refreshInFlight=false, refreshQueued=false;
 async function refresh(){
   if(State.demo) return;   // frozen preview — don't overwrite with live data
+  if(refreshInFlight){ refreshQueued=true; return; }   // never run overlapping polls — one more pass happens right after this one finishes
+  refreshInFlight=true;
   try{
     await Store.flush();                 // retry any queued writes first
     const avs=await Store.list('avatar:');
@@ -1116,13 +1119,29 @@ async function refresh(){
     State.reactions={}; Object.entries(rx).forEach(([k,v])=>{ if(v?.map) State.reactions[k.split(':')[1]]=v.map; });
     const ti=await Store.list('title:');
     State.titles={}; Object.entries(ti).forEach(([k,v])=>{ if(v?.text) State.titles[k.split(':')[1]]=v.text; });
-    State.cards=await Store.list('card:');
+    const freshCards=await Store.list('card:');
+    const now=Date.now();
+    const merged={...State.cards};
+    Object.keys(freshCards).forEach(k=>{
+      const fresh=freshCards[k], local=merged[k];
+      const protectedUntil=recentLocalWrite.get(k);
+      const stillProtected = protectedUntil && now<protectedUntil;
+      if(!local || !stillProtected){ merged[k]=fresh; return; }   // no recent edit here — trust the server (picks up other devices' corrections)
+      // recently edited on THIS device — union the holes, local wins, so a poll can't erase something just entered
+      merged[k] = { ...fresh, ...local, holes: {...(fresh.holes||{}), ...(local.holes||{})} };
+    });
+    for(const [k,t] of recentLocalWrite){ if(now>=t) recentLocalWrite.delete(k); }   // housekeeping
+    State.cards=merged;
     const cfg=await Store.get('config'); if(cfg){ State.config=cfg; }
     updateSyncDot(Store.status());
     if(State.view==='board') updateBoard();
     else if(State.view==='enter'){ const {round,seg,key}=curEntryRefs(); updateEntryAfterSave(State.cards[key]||{holes:{},enteredBy:''}); }
     else if(State.view==='roster' && getDraft().status==='live') render(false);
   }catch(e){}
+  finally{
+    refreshInFlight=false;
+    if(refreshQueued){ refreshQueued=false; refresh(); }
+  }
 }
 let pollTimer=null;
 function startPoll(){ clearInterval(pollTimer); pollTimer=setInterval(refresh, 5000); }
@@ -1640,6 +1659,7 @@ function wireEntry(){
   const selCell=document.getElementById('hole-'+State.entryHole);
   if(selCell && typeof selCell.scrollIntoView==='function') selCell.scrollIntoView({inline:'center', block:'nearest'});
 }
+const recentLocalWrite=new Map();   // storage key -> timestamp until which local data should win over a poll fetch
 async function saveHole(v){
   const {round,key}=curEntryRefs();
   if(round?.frozen) return; // locked
@@ -1649,6 +1669,7 @@ async function saveHole(v){
   card.enteredBy=player(State.me)?.name||'—';
   card.updatedAt=Date.now();
   State.cards[key]=card;
+  recentLocalWrite.set(key, Date.now()+20000);   // protect this key's local data for 20s — covers any sync lag without permanently ignoring other devices' updates
   if(State.view==='enter') updateEntryAfterSave(card);   // paint the row/total instantly
   Store.set(key,card);   // fires immediately — Store's own outbox protects this from a same-moment poll; syncs to Netlify in the background
 }
@@ -2465,6 +2486,7 @@ function loadDemo(){
 async function clearDemo(){
   State.demo=false;
   document.getElementById('demoBar')?.classList.add('hidden');
+  recentLocalWrite.clear();   // demo-time edits shouldn't linger and shadow real data on the next poll
   await loadAll();   // reload the real config + scores from the store, discarding the in-memory demo
   render(true);
 }
