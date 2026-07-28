@@ -99,38 +99,27 @@ input,select{font-family:inherit;font-size:16px}
 .side-tabs button{display:flex;align-items:center;gap:6px;background:var(--paper);border:1px solid var(--line);padding:7px 11px 7px 7px;border-radius:999px;font-size:13px;font-weight:600;color:var(--text)}
 .side-tabs button .av{width:24px;height:24px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:14px}
 .side-tabs button.on{background:var(--ink);color:var(--light);border-color:var(--ink)}
-.holepick{display:grid;grid-template-columns:repeat(9,1fr);gap:5px;margin-bottom:14px}
-.holepick button{aspect-ratio:1;border-radius:8px;background:var(--paper2);font-family:'Oswald';color:var(--text);border:1px solid transparent;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:0}
-.holepick button .hn{font-weight:600;font-size:14px;line-height:1.1}
-.holepick button .hp{font-weight:500;font-size:8.5px;line-height:1.1;color:var(--text-dim);margin-top:1px}
-.holepick button.on .hp{color:rgba(237,231,214,.6)}
-.holepick button.done{background:#dfe6dc}
-.holepick button.on{background:var(--ink);color:var(--light)}
-.holepick button .dot{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--green)}
-.holepick button .strk{position:absolute;top:2px;right:3px;font-size:8px;line-height:1;color:var(--red);font-weight:700}
+
 .stepper{display:flex;align-items:center;justify-content:center;gap:18px;margin:8px 0 16px}
 .stepper .val{font-family:'Oswald';font-weight:700;font-size:64px;line-height:1;min-width:96px;text-align:center}
 .stepper .val small{display:block;font-family:'Inter';font-weight:600;font-size:12px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase}
 .stepper button.pm{width:60px;height:60px;border-radius:50%;background:var(--ink);color:var(--light);font-size:30px;font-weight:600;display:grid;place-items:center}
 .stepper button.pm:active{transform:scale(.94)}
-.sc-hole{text-align:center;font-family:'Oswald';font-weight:700;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--text-dim);margin-bottom:1px}
-.sc-hole b{display:block;font-size:32px;letter-spacing:0;color:var(--text);font-weight:800;line-height:1.05;margin-top:1px}
-.sc-infobox{display:flex;max-width:220px;margin:0 auto 14px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--paper)}
-.sc-infobox .cell{flex:1;padding:9px 6px;text-align:center;border-right:1px solid var(--line)}
-.sc-infobox .cell:last-child{border-right:none}
-.sc-infobox .cell b{display:block;font-family:'Oswald';font-size:19px;font-weight:700;color:var(--text)}
-.sc-infobox .cell small{display:block;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-dim);margin-top:2px}
-.sc-scorebox{width:118px;aspect-ratio:1;margin:2px auto 14px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-family:'Oswald';font-weight:800;font-size:46px;color:var(--text);background:var(--paper2);border:2px solid var(--line);transition:background .15s,border-color .15s,color .15s}
-.sc-scorebox.empty{background:transparent;border:2px dashed var(--line);color:transparent}
-.sc-scorebox.sc-won{background:#dff3df;border-color:#3f9142;color:#1f6b23}
-.sc-scorebox.sc-lost{background:#f7e3e1;border-color:var(--red);color:#a23a30}
-.sc-scorebox.sc-halved{background:#fbf0d6;border-color:var(--gold);color:#8a6a10}
-.sc-matchline{max-width:230px;margin:-4px auto 14px;text-align:center;font-family:'Oswald';font-weight:700;font-size:14px;padding:8px 10px;border-radius:10px;background:var(--paper2);color:var(--text)}
-.sc-matchline span{font-weight:500;color:var(--text-dim);font-size:11px;margin-left:4px;text-transform:uppercase;letter-spacing:.04em}
-.sc-matchline.sc-win{background:#dff3df;color:#1f6b23}
-.sc-matchline.sc-lose{background:#f7e3e1;color:#a23a30}
-.sc-matchline.sc-half{background:#fbf0d6;color:#8a6a10}
-.sc-matchline.sc-win span,.sc-matchline.sc-lose span,.sc-matchline.sc-half span{color:inherit;opacity:.65}
+.sc-table{display:grid;gap:4px;margin-bottom:14px}
+.sc-h{text-align:center;font-family:'Oswald';font-weight:600;font-size:13px;color:var(--text-dim);padding:2px 0}
+.sc-h.on{color:var(--text);font-weight:800}
+.sc-box{aspect-ratio:1;border-radius:8px;background:var(--paper2);border:1px solid var(--line);font-family:'Oswald';font-weight:700;font-size:15px;color:var(--text);display:flex;align-items:center;justify-content:center;position:relative}
+.sc-box sup{font-size:9px;color:var(--red);font-weight:800;margin-left:1px;top:-.6em}
+.sc-par sup{color:var(--red)}
+.sc-score{background:var(--paper)}
+.sc-score.done{background:#dfe6dc}
+.sc-score.on{background:var(--ink);color:var(--light);border-color:var(--ink)}
+.sc-score.on sup{color:#ffb020}
+.sc-score sup{color:var(--gold);font-weight:700}
+.sc-match{font-size:10.5px;font-weight:800;letter-spacing:.02em;background:var(--paper)}
+.sc-match.win{background:#dff3df;color:#1f6b23}
+.sc-match.lose{background:#f7e3e1;color:#a23a30}
+.sc-match.as{background:#fbf0d6;color:#8a6a10}
 .quickrow{display:flex;gap:8px;margin-bottom:6px}
 .quickrow button{flex:1;padding:11px;border-radius:10px;background:var(--paper2);font-weight:600;font-size:13px;border:1px solid var(--line)}
 .entered-by{text-align:center;font-size:11px;color:var(--text-dim);margin-top:10px}
@@ -909,6 +898,38 @@ function personalMatchStatus(round, seg, sideId){
   if(res.remaining===0) return {main:`${u} ${myDiff>0?'UP':'DOWN'}`, sub:'final', cls: myDiff>0?'win':'lose'};
   return {main:`${u} ${myDiff>0?'UP':'DOWN'}`, sub:`thru ${res.played}`, cls: myDiff>0?'win':'lose'};
 }
+// personal net for a single hole — works even with no opponent yet (aggregate formats, or unpaired individual formats)
+function entryNetForHole(round, seg, sideId, hole, gross){
+  if(gross==null || !useHcp()) return gross;
+  if(FORMATS[seg.format]?.side==='group'){
+    const m=matchOfSide(seg, sideId); if(!m) return gross; // no opponent yet — side handicap is relative, can't compute
+    const c=courseOf(round), part=entrySideOfMatch(seg, sideId, m);
+    const aCH=sideCH(m.a,c,seg.format), bCH=sideCH(m.b,c,seg.format), low=Math.min(aCH,bCH);
+    const stk=(part==='a'?aCH:bCH)-low;
+    return gross - strokesOnHole(stk, c?.si?.[hole-1]);
+  }
+  return gross - strokeSheet(sideId, round, hole);
+}
+// cumulative match state through each hole, from MY side's perspective — for the per-hole "+/-" row
+function matchProgressionForSide(round, seg, sideId){
+  const m=matchOfSide(seg, sideId); if(!m) return null;
+  const {aVal,bVal}=matchValFns(round, seg, m);
+  const imA=entrySideOfMatch(seg, sideId, m)==='a';
+  const out={}; let aUp=0,bUp=0;
+  for(let h=seg.start; h<=seg.end; h++){
+    const a=aVal(h), b=bVal(h);
+    const settled = a!=null && b!=null;
+    if(settled){ if(a<b) aUp++; else if(b<a) bUp++; }
+    const diff = imA ? (aUp-bUp) : (bUp-aUp);
+    out[h] = settled ? {diff} : null;
+  }
+  return out;
+}
+function matchCellLabel(entry){
+  if(!entry) return {text:'', cls:''};
+  if(entry.diff===0) return {text:'AS', cls:'as'};
+  return {text:`${Math.abs(entry.diff)}${entry.diff>0?'UP':'DN'}`, cls: entry.diff>0?'win':'lose'};
+}
 
 /* ---------- Standings ---------- */
 function segTeamNet(round, seg){ // provisional fallback when no matches defined
@@ -1402,15 +1423,25 @@ function viewEnter(){
   const strokesOn = (h)=> (isIndiv && useHcp()) ? strokeSheet(side.id, round, h) : 0;
   let segStrokes=0; for(let h=seg.start; h<=seg.end; h++) segStrokes+=strokesOn(h);
 
-  const holeCells=[];
-  for(let h=seg.start; h<=seg.end; h++){
-    const v=card.holes?.[h];
-    const sN=strokesOn(h);
-    const parH=pars[h-1];
-    const pip = sN>0 ? `<span class="strk">${sN>1?sN:'•'}</span>` : '';
-    holeCells.push(`<button id="hole-${h}" class="${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${pip}<span class="hn">${h}</span>${parH?`<span class="hp">${parH}</span>`:''}${v!=null?'<span class="dot"></span>':''}</button>`);
-  }
   const segHoleCount=seg.end-seg.start+1;
+  const holes=[]; for(let h=seg.start; h<=seg.end; h++) holes.push(h);
+  const progression = personalMatchStatus(round, seg, side.id) ? matchProgressionForSide(round, seg, side.id) : null;
+
+  const rowHole = holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
+  const rowPar = holes.map(h=>{
+    const sN=strokesOn(h);
+    return `<div class="sc-box sc-par">${pars[h-1]||'—'}${sN>0?`<sup>${sN}</sup>`:''}</div>`;
+  }).join('');
+  const rowScore = holes.map(h=>{
+    const v=card.holes?.[h];
+    const net=v!=null?entryNetForHole(round,seg,side.id,h,v):null;
+    const showNet = v!=null && useHcp() && net!==v;
+    return `<button id="hole-${h}" class="sc-box sc-score ${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${v??''}${showNet?`<sup>${net}</sup>`:''}</button>`;
+  }).join('');
+  const rowMatch = progression ? holes.map(h=>{
+    const {text,cls}=matchCellLabel(progression[h]);
+    return `<div class="sc-box sc-match ${cls}">${text}</div>`;
+  }).join('') : '';
 
   const cur=card.holes?.[State.entryHole];
   const par=pars[State.entryHole-1]||4;
@@ -1420,10 +1451,6 @@ function viewEnter(){
   const strokeLine = (isIndiv && useHcp())
     ? `<div class="muted" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--gold)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b style="color:var(--gold)">•</b> marks a stroke hole${strokeThisHole?` · you get <b style="color:var(--gold)">${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'}</b> on hole ${State.entryHole}`:''}</div>`
     : '';
-  const scEntered = cur!=null;
-  const scOutcome = scEntered ? holeOutcomeForSide(round, seg, side.id, State.entryHole) : null;
-  const scCls = scOutcome?.outcome ? 'sc-'+scOutcome.outcome : '';
-  const mStatus = personalMatchStatus(round, seg, side.id);
 
   return `
   ${roundTabs}
@@ -1432,17 +1459,13 @@ function viewEnter(){
   ${sideTabs}
   ${strokeLine}
   <div class="card">
-    <div class="sc-hole">Hole<b>${State.entryHole}</b></div>
-    <div class="mono" id="entryTotal" style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:12px">${entryTotalHTML(card,round,seg,side.id)}</div>
-    <div class="sc-infobox">
-      <div class="cell"><b>${par}</b><small>Par</small></div>
-      <div class="cell"><b>${strokeThisHole||'—'}</b><small>Strokes</small></div>
+    <div class="mono" id="entryTotal" style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:10px">${entryTotalHTML(card,round,seg,side.id)}</div>
+    <div class="sc-table" style="grid-template-columns:repeat(${holes.length},1fr)">
+      ${rowHole}${rowPar}${rowScore}<div id="matchRow" style="display:contents">${rowMatch}</div>
     </div>
-    <div class="sc-scorebox ${scEntered?scCls:'empty'}" id="scoreBox">${scEntered?cur:''}</div>
-    ${mStatus?`<div class="sc-matchline ${mStatus.cls?'sc-'+mStatus.cls:''}" id="scMatchLine">${esc(mStatus.main)}${mStatus.sub?`<span>· ${esc(mStatus.sub)}</span>`:''}</div>`:''}
-    <div class="holepick" style="grid-template-columns:repeat(9,1fr)">${holeCells.join('')}</div>
     <div class="stepper">
       <button class="pm" id="minus">–</button>
+      <div class="val" id="strokeVal">${cur??par}<small>Strokes · Hole ${State.entryHole}</small></div>
       <button class="pm" id="plus">+</button>
     </div>
     <div class="quickrow">
@@ -1509,41 +1532,36 @@ async function saveHole(v){
   card.enteredBy=player(State.me)?.name||'—';
   card.updatedAt=Date.now();
   State.cards[key]=card;
-  if(State.view==='enter') updateEntryAfterSave(card);   // paint the box/dot/total instantly
+  if(State.view==='enter') updateEntryAfterSave(card);   // paint the row/total instantly
   Store.set(key,card);   // fires immediately — Store's own outbox protects this from a same-moment poll; syncs to Netlify in the background
 }
-function paintScoreBox(round, seg, sideId, hole, val){
-  const box=document.getElementById('scoreBox'); if(!box) return;
-  box.classList.remove('empty','sc-won','sc-lost','sc-halved');
-  if(val==null){ box.classList.add('empty'); box.textContent=''; return; }
-  box.textContent=val;
-  const oc=holeOutcomeForSide(round, seg, sideId, hole);
-  if(oc?.outcome) box.classList.add('sc-'+oc.outcome);
+function paintScoreCell(round, seg, sideId, hole){
+  const btn=document.getElementById('hole-'+hole); if(!btn) return;
+  const {key}=curEntryRefs(); const v=State.cards[key]?.holes?.[hole];
+  btn.classList.toggle('on', hole===State.entryHole);
+  btn.classList.toggle('done', v!=null);
+  if(v==null){ btn.innerHTML=''; return; }
+  const net=entryNetForHole(round,seg,sideId,hole,v);
+  const showNet = useHcp() && net!==v;
+  btn.innerHTML=`${v}${showNet?`<sup>${net}</sup>`:''}`;
 }
-function paintMatchLine(round, seg, sideId){
-  const el=document.getElementById('scMatchLine'); if(!el) return;
-  const st=personalMatchStatus(round, seg, sideId);
-  if(!st){ el.style.display='none'; return; }
-  el.style.display='';
-  el.className='sc-matchline '+(st.cls?'sc-'+st.cls:'');
-  el.innerHTML = esc(st.main)+(st.sub?`<span>· ${esc(st.sub)}</span>`:'');
+function paintMatchRow(round, seg, sideId){
+  const row=document.getElementById('matchRow'); if(!row) return;
+  const prog=personalMatchStatus(round, seg, sideId) ? matchProgressionForSide(round, seg, sideId) : null;
+  if(!prog){ row.innerHTML=''; return; }
+  let html=''; for(let h=seg.start; h<=seg.end; h++){ const {text,cls}=matchCellLabel(prog[h]); html+=`<div class="sc-box sc-match ${cls}">${text}</div>`; }
+  row.innerHTML=html;
 }
 function updateEntryAfterSave(card){
   const {round,seg}=curEntryRefs();
-  const has=card.holes?.[State.entryHole]!=null;
-  const btn=document.getElementById('hole-'+State.entryHole);
-  if(btn){
-    btn.classList.toggle('done',has);
-    let dot=btn.querySelector('.dot');
-    if(has && !dot){ dot=document.createElement('span'); dot.className='dot'; btn.appendChild(dot); }
-    if(!has && dot){ dot.remove(); }
-  }
+  const valEl=document.getElementById('strokeVal');
+  if(valEl){ const par=courseOf(round)?.pars?.[State.entryHole-1]||4; valEl.innerHTML=`${card.holes?.[State.entryHole] ?? par}<small>Strokes · Hole ${State.entryHole}</small>`; }
+  paintScoreCell(round, seg, State.entrySide, State.entryHole);
+  paintMatchRow(round, seg, State.entrySide);
   const tot=document.getElementById('entryTotal');
   if(tot) tot.innerHTML=entryTotalHTML(card, round, seg, State.entrySide);
   const eb=document.getElementById('enteredBy');
   if(eb) eb.textContent=card.enteredBy?`Last saved by ${card.enteredBy}`:'Not started';
-  paintScoreBox(round, seg, State.entrySide, State.entryHole, card.holes?.[State.entryHole] ?? null);
-  paintMatchLine(round, seg, State.entrySide);
   updateSyncNote();
 }
 
