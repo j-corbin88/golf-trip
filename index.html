@@ -105,7 +105,8 @@ input,select{font-family:inherit;font-size:16px}
 .stepper .val small{display:block;font-family:'Inter';font-weight:600;font-size:12px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase}
 .stepper button.pm{width:60px;height:60px;border-radius:50%;background:var(--ink);color:var(--light);font-size:30px;font-weight:600;display:grid;place-items:center}
 .stepper button.pm:active{transform:scale(.94)}
-.sc-table{display:grid;gap:4px;margin-bottom:14px}
+.sc-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px 14px;padding:0 16px}
+.sc-table{display:grid;gap:4px;width:max-content}
 .sc-h{text-align:center;font-family:'Oswald';font-weight:600;font-size:13px;color:var(--text-dim);padding:2px 0}
 .sc-h.on{color:var(--text);font-weight:800}
 .sc-box{aspect-ratio:1;border-radius:8px;background:var(--paper2);border:1px solid var(--line);font-family:'Oswald';font-weight:700;font-size:15px;color:var(--text);display:flex;align-items:center;justify-content:center;position:relative}
@@ -345,11 +346,13 @@ const Store = (() => {
       return base;
     },
     async set(key,value){
+      if(typeof State!=='undefined' && State.demo) return null;   // demo preview must never touch the real store
       lsSet(key,value); outbox.set(key,{op:'set',value}); saveOutbox(); notify();
       try{ await sSet(key,value); outbox.delete(key); saveOutbox(); ok(); notify(); }
       catch(e){ fail(); notify(); }    // stays queued; flush() retries
     },
     async del(key){
+      if(typeof State!=='undefined' && State.demo) return null;   // demo preview must never touch the real store
       lsDel(key); outbox.set(key,{op:'del'}); saveOutbox(); notify();
       try{ await sDel(key); outbox.delete(key); saveOutbox(); ok(); notify(); }
       catch(e){ fail(); notify(); }
@@ -899,16 +902,20 @@ function personalMatchStatus(round, seg, sideId){
   return {main:`${u} ${myDiff>0?'UP':'DOWN'}`, sub:`thru ${res.played}`, cls: myDiff>0?'win':'lose'};
 }
 // personal net for a single hole — works even with no opponent yet (aggregate formats, or unpaired individual formats)
-function entryNetForHole(round, seg, sideId, hole, gross){
-  if(gross==null || !useHcp()) return gross;
+function entryStrokesForHole(round, seg, sideId, hole){
+  if(!useHcp()) return 0;
   if(FORMATS[seg.format]?.side==='group'){
-    const m=matchOfSide(seg, sideId); if(!m) return gross; // no opponent yet — side handicap is relative, can't compute
+    const m=matchOfSide(seg, sideId); if(!m) return 0; // no opponent yet — side handicap is relative, can't compute
     const c=courseOf(round), part=entrySideOfMatch(seg, sideId, m);
     const aCH=sideCH(m.a,c,seg.format), bCH=sideCH(m.b,c,seg.format), low=Math.min(aCH,bCH);
     const stk=(part==='a'?aCH:bCH)-low;
-    return gross - strokesOnHole(stk, c?.si?.[hole-1]);
+    return strokesOnHole(stk, c?.si?.[hole-1]) || 0;
   }
-  return gross - strokeSheet(sideId, round, hole);
+  return strokeSheet(sideId, round, hole) || 0;
+}
+function entryNetForHole(round, seg, sideId, hole, gross){
+  if(gross==null || !useHcp()) return gross;
+  return gross - entryStrokesForHole(round, seg, sideId, hole);
 }
 // cumulative match state through each hole, from MY side's perspective — for the per-hole "+/-" row
 function matchProgressionForSide(round, seg, sideId){
@@ -1429,7 +1436,7 @@ function viewEnter(){
 
   const rowHole = holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
   const rowPar = holes.map(h=>{
-    const sN=strokesOn(h);
+    const sN=entryStrokesForHole(round,seg,side.id,h);
     return `<div class="sc-box sc-par">${pars[h-1]||'—'}${sN>0?`<sup>${sN}</sup>`:''}</div>`;
   }).join('');
   const rowScore = holes.map(h=>{
@@ -1460,8 +1467,10 @@ function viewEnter(){
   ${strokeLine}
   <div class="card">
     <div class="mono" id="entryTotal" style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:10px">${entryTotalHTML(card,round,seg,side.id)}</div>
-    <div class="sc-table" style="grid-template-columns:repeat(${holes.length},1fr)">
+    <div class="sc-scroll">
+    <div class="sc-table" style="grid-template-columns:repeat(${holes.length},44px)">
       ${rowHole}${rowPar}${rowScore}<div id="matchRow" style="display:contents">${rowMatch}</div>
+    </div>
     </div>
     <div class="stepper">
       <button class="pm" id="minus">–</button>
@@ -1522,6 +1531,8 @@ function wireEntry(){
   if(minus) minus.onclick=()=>{ const v=Math.max(1,(curVal()??par)-1); saveHole(v); };
   window.setStroke=(v)=>{ saveHole(v); };
   window.clearHole=()=>{ saveHole(null); };
+  const selCell=document.getElementById('hole-'+State.entryHole);
+  if(selCell && typeof selCell.scrollIntoView==='function') selCell.scrollIntoView({inline:'center', block:'nearest'});
 }
 async function saveHole(v){
   const {round,key}=curEntryRefs();
