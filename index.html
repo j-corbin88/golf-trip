@@ -155,6 +155,9 @@ input,select{font-family:inherit;font-size:16px}
 .tag{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--ink);color:var(--light)}
 .vbox{flex:none;width:22px;height:22px;border-radius:6px;border:2px solid var(--line);display:grid;place-items:center;font-size:14px;font-weight:800;color:#fff}
 .vbox.on{background:var(--gold);border-color:var(--gold)}
+.voterow{display:flex;align-items:center;gap:10px;padding:12px;border-radius:10px;background:#fff;color:var(--text);border:1px solid var(--line);text-align:left;font-weight:600;width:100%;margin-bottom:7px}
+.voterow.on{background:var(--paper2);border-color:var(--gold)}
+.voterow:disabled{opacity:.4}
 .empty{text-align:center;padding:28px 16px;color:var(--text-dim)}
 .empty .big{font-size:34px;margin-bottom:8px}
 .banner{background:rgba(229,168,35,.14);border:1px solid rgba(229,168,35,.4);color:#7a5a10;border-radius:10px;padding:10px 12px;font-size:12px;line-height:1.5;margin-bottom:14px}
@@ -1540,7 +1543,7 @@ function viewRoster(){
     return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b>${sub}</div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`;
   }).join('')}</div>`:'';
   const mv=myVotes();
-  const mvNames=mv.map(id=>player(id)?.name?.split(' ')[0]).filter(Boolean).join(' & ');
+  const mvNames=mv.map(id=>displayName(id)).filter(Boolean).join(' & ');
   const voteCard = (d.status==='none') ? `<div class="card">
     <div class="eyebrow">Captain Vote</div>
     <h3 style="font-size:18px;text-transform:uppercase;margin-bottom:6px">Vote for two captains</h3>
@@ -1613,8 +1616,29 @@ function toggleVote(choiceId){
   if(cur.includes(choiceId)) cur=cur.filter(x=>x!==choiceId);
   else { if(cur.length>=2) return; cur.push(choiceId); }
   State.votes[State.me]=cur;
-  renderVoteModal();   // update the screen instantly — don't wait on the network
+  updateVoteRows();   // mutate the existing buttons in place — don't tear down/rebuild the DOM the finger just tapped
   Store.set('vote:'+State.me,{choices:cur, at:Date.now()});   // syncs in the background; queues + retries if offline
+}
+function voteRowInner(p, on){
+  return `<span class="vbox ${on?'on':''}">${on?'✓':''}</span>
+    <span style="width:26px;height:26px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:15px;flex:none">${avatarOf(p.id)}</span>
+    <span style="flex:1">${esc(p.name)}</span>`;
+}
+function updateVoteRows(){
+  const mine=myVotes();
+  const eyebrow=document.getElementById('voteCountEyebrow');
+  if(eyebrow) eyebrow.textContent=`${mine.length} of 2 selected${mine.length===2?' ✓':''}`;
+  (State.config.players||[]).forEach(p=>{
+    const el=document.getElementById('vrow-'+p.id);
+    if(!el) return;
+    const on=mine.includes(p.id);
+    const atCap=!on && mine.length>=2;
+    el.disabled=atCap;
+    el.className='voterow'+(on?' on':'');
+    el.innerHTML=voteRowInner(p,on);
+  });
+  const done=document.getElementById('voteDoneBtn');
+  if(done) done.className='btn '+(mine.length?'gold':'ghost');
 }
 function renderVoteModal(){
   if(!State.me){ openIdentity(); return; }
@@ -1622,17 +1646,13 @@ function renderVoteModal(){
   const rows=(State.config.players||[]).map(p=>{
     const on=mine.includes(p.id);
     const atCap = !on && mine.length>=2;
-    return `<button onclick="toggleVote('${p.id}')" ${atCap?'disabled':''} style="display:flex;align-items:center;gap:10px;padding:12px;border-radius:10px;background:${on?'var(--paper2)':'#fff'};color:var(--text);border:1px solid ${on?'var(--gold)':'var(--line)'};text-align:left;font-weight:600;width:100%;margin-bottom:7px;${atCap?'opacity:.4':''}">
-      <span class="vbox ${on?'on':''}">${on?'✓':''}</span>
-      <span style="width:26px;height:26px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:15px;flex:none">${avatarOf(p.id)}</span>
-      <span style="flex:1">${esc(p.name)}</span>
-    </button>`;
+    return `<button id="vrow-${p.id}" onclick="toggleVote('${p.id}')" ${atCap?'disabled':''} class="voterow${on?' on':''}">${voteRowInner(p,on)}</button>`;
   }).join('');
   showModal(`<div class="modal-h"><h2>Vote for two captains</h2><p class="muted" style="margin:4px 0 0">Pick <b>two</b>. Your votes are private — only the commissioner sees the tally. Tap again to unpick; change anytime.</p></div>
     <div class="modal-b">
-      <div class="eyebrow" style="margin-bottom:8px">${mine.length} of 2 selected${mine.length===2?' ✓':''}</div>
+      <div class="eyebrow" id="voteCountEyebrow" style="margin-bottom:8px">${mine.length} of 2 selected${mine.length===2?' ✓':''}</div>
       ${rows}
-      <button class="btn ${mine.length?'gold':'ghost'}" style="margin-top:4px" onclick="closeModal()">Done</button>
+      <button id="voteDoneBtn" class="btn ${mine.length?'gold':'ghost'}" style="margin-top:4px" onclick="closeModal()">Done</button>
     </div>`);
 }
 function renderVoteResults(){
@@ -1642,14 +1662,15 @@ function renderVoteResults(){
   const total=voteCount(), roster=(State.config.players||[]).length;
   const bothCount=Object.values(State.votes).filter(a=>(a||[]).length>=2).length;
   const tallyRows = ranked.length ? ranked.map(([pid,n])=>{
-    const voters=Object.entries(State.votes).filter(([,arr])=>(arr||[]).includes(pid)).map(([vid])=>player(vid)?.name?.split(' ')[0]||'?').join(', ');
+    const voters=Object.entries(State.votes).filter(([,arr])=>(arr||[]).includes(pid)).map(([vid])=>displayName(vid)).join(', ');
     return `<div class="roster-item">
       <div class="av">${avatarOf(pid)}</div>
       <div class="info"><b>${esc(player(pid)?.name||'?')}${top2.has(pid)?' ⭐':''}</b><span>${esc(voters)}</span></div>
       <div class="hcp"><b>${n}</b><span>VOTES</span></div>
     </div>`;
   }).join('') : '<div class="muted">No votes yet.</div>';
-  const nonVoters=(State.config.players||[]).filter(p=>!(State.votes[p.id]||[]).length).map(p=>p.name.split(' ')[0]);
+  const nonVoters=(State.config.players||[]).filter(p=>!(State.votes[p.id]||[]).length).map(p=>displayName(p.id));
+  const oneVoters=(State.config.players||[]).filter(p=>(State.votes[p.id]||[]).length===1).map(p=>displayName(p.id));
   showModal(`
     <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Captain Vote</h2><button class="btn sm ghost" onclick="renderAdmin()">Back</button></div>
     <div class="modal-b">
@@ -1657,6 +1678,7 @@ function renderVoteResults(){
       <button class="btn ghost sm" style="width:100%;margin-bottom:12px" onclick="refresh().then(renderVoteResults)">↻ Refresh results</button>
       <div class="eyebrow">Tally · who voted for whom</div>
       <div style="margin-bottom:12px">${tallyRows}</div>
+      ${oneVoters.length?`<div class="muted" style="font-size:12px;margin-bottom:8px"><b>One vote remaining:</b> ${esc(oneVoters.join(', '))}</div>`:''}
       ${nonVoters.length?`<div class="muted" style="font-size:12px;margin-bottom:12px"><b>Haven't voted:</b> ${esc(nonVoters.join(', '))}</div>`:''}
       ${ranked.length>=2?`<button class="btn gold" onclick="startDraftFromVote()">Make top two captains &amp; start draft</button>`:''}
     </div>`);
