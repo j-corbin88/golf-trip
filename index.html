@@ -100,10 +100,13 @@ input,select{font-family:inherit;font-size:16px}
 .side-tabs button .av{width:24px;height:24px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:14px}
 .side-tabs button.on{background:var(--ink);color:var(--light);border-color:var(--ink)}
 .holepick{display:grid;grid-template-columns:repeat(9,1fr);gap:5px;margin-bottom:14px}
-.holepick button{aspect-ratio:1;border-radius:8px;background:var(--paper2);font-family:'Oswald';font-weight:600;font-size:14px;color:var(--text);border:1px solid transparent;position:relative}
+.holepick button{aspect-ratio:1;border-radius:8px;background:var(--paper2);font-family:'Oswald';color:var(--text);border:1px solid transparent;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:0}
+.holepick button .hn{font-weight:600;font-size:14px;line-height:1.1}
+.holepick button .hp{font-weight:500;font-size:8.5px;line-height:1.1;color:var(--text-dim);margin-top:1px}
+.holepick button.on .hp{color:rgba(237,231,214,.6)}
 .holepick button.done{background:#dfe6dc}
 .holepick button.on{background:var(--ink);color:var(--light)}
-.holepick button .dot{position:absolute;bottom:3px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--green)}
+.holepick button .dot{position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--green)}
 .holepick button .strk{position:absolute;top:2px;right:3px;font-size:8px;line-height:1;color:var(--red);font-weight:700}
 .stepper{display:flex;align-items:center;justify-content:center;gap:18px;margin:8px 0 16px}
 .stepper .val{font-family:'Oswald';font-weight:700;font-size:64px;line-height:1;min-width:96px;text-align:center}
@@ -409,9 +412,9 @@ async function toggleReaction(mk, emoji){
   const map={...(State.reactions[State.me]||{})};
   if(map[mk]===emoji) delete map[mk]; else map[mk]=emoji;
   State.reactions[State.me]=map;
-  await Store.set('react:'+State.me,{map});
   const el=document.getElementById('rx-'+mk);
   if(el){ el.outerHTML=reactionBarHTML(mk); } else if(State.view==='board'){ updateBoard(); }
+  Store.set('react:'+State.me,{map});
 }
 function reactionBarHTML(mk){
   const counts=reactionsFor(mk), mine=myReaction(mk);
@@ -445,13 +448,13 @@ function titleOf(pid){
 async function setTitle(pid, text){
   text=(text||'').trim().slice(0,40);
   if(text) State.titles[pid]=text; else State.titles[pid]=NO_TITLE;   // explicit clear, not just "no override"
-  await Store.set('title:'+pid,{text: text||NO_TITLE});
   closeModal(); render();
+  Store.set('title:'+pid,{text: text||NO_TITLE});
 }
 async function resetTitleAuto(pid){
   delete State.titles[pid];
-  await Store.del('title:'+pid);
   closeModal(); render();
+  Store.del('title:'+pid);
 }
 const TITLE_SUGGESTIONS=['The Sandbagger','Cart Path Only','Beer Cart MVP','Mr. Irrelevant','Three-Putt King','Snowman Collector ☃️','The Commish','Mathlete','Sunday Scaries','36.9 and Proud','The Ringer 🎯','Gimme Merchant'];
 function renderTitleEditor(pid){
@@ -873,10 +876,12 @@ function segTeamNet(round, seg){ // provisional fallback when no matches defined
 const segWeight = (seg)=> (seg?.weight!=null && seg.weight!=='') ? Number(seg.weight) : 1;
 function pointsAvailable(){
   let n=0;
+  const teamsHavePlayers = (State.config.teams||[]).length>0 && (State.config.teams||[]).every(t=>teamRoster(t.id).length>0);
   (State.config.rounds||[]).forEach(r=>segsOf(r).forEach(seg=>{
     if(!seg.format) return;
     const w=segWeight(seg);
-    n += (FORMATS[seg.format]?.scoring==='aggregate') ? w : segMatches(seg).length*w;
+    if(FORMATS[seg.format]?.scoring==='aggregate'){ if(teamsHavePlayers) n+=w; }
+    else { n += segMatches(seg).length*w; }
   }));
   return n;
 }
@@ -1041,11 +1046,11 @@ function renderHcpStep(pid){
 }
 async function confirmIdentity(pid, saveHcp){
   const emoji=window._pendingAv||'🏌️';
-  await Store.set('avatar:'+pid,{emoji});
   State.avatars[pid]=emoji;
+  Store.set('avatar:'+pid,{emoji});
   if(saveHcp && !hcpLocked()){
     const raw=$('#hcpInput')?.value;
-    if(raw!==undefined && raw!==''){ const index=Number(raw); await Store.set('hcp:'+pid,{index}); State.hcps[pid]=index; }
+    if(raw!==undefined && raw!==''){ const index=Number(raw); State.hcps[pid]=index; Store.set('hcp:'+pid,{index}); }
   }
   Device.set('me',pid); State.me=pid;
   closeModal(); updateMeChip(); render();
@@ -1353,8 +1358,9 @@ function viewEnter(){
   for(let h=seg.start; h<=seg.end; h++){
     const v=card.holes?.[h];
     const sN=strokesOn(h);
+    const parH=pars[h-1];
     const pip = sN>0 ? `<span class="strk">${sN>1?sN:'•'}</span>` : '';
-    holeCells.push(`<button id="hole-${h}" class="${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${pip}${h}${v!=null?'<span class="dot"></span>':''}</button>`);
+    holeCells.push(`<button id="hole-${h}" class="${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${pip}<span class="hn">${h}</span>${parH?`<span class="hp">${parH}</span>`:''}${v!=null?'<span class="dot"></span>':''}</button>`);
   }
   const segHoleCount=seg.end-seg.start+1;
 
@@ -1364,7 +1370,7 @@ function viewEnter(){
   const enteredBy=card.enteredBy?`Last saved by ${esc(card.enteredBy)}`:'Not started';
   const strokeThisHole=strokesOn(State.entryHole);
   const strokeLine = (isIndiv && useHcp())
-    ? `<div class="muted" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--text)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b>•</b> marks a stroke hole${strokeThisHole?` · you get ${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'} on hole ${State.entryHole}`:''}</div>`
+    ? `<div class="muted" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--gold)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b style="color:var(--gold)">•</b> marks a stroke hole${strokeThisHole?` · you get <b style="color:var(--gold)">${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'}</b> on hole ${State.entryHole}`:''}</div>`
     : '';
 
   return `
@@ -1453,8 +1459,8 @@ async function saveHole(v){
   card.enteredBy=player(State.me)?.name||'—';
   card.updatedAt=Date.now();
   State.cards[key]=card;
-  await Store.set(key,card);
-  if(State.view==='enter') updateEntryAfterSave(card);
+  if(State.view==='enter') updateEntryAfterSave(card);   // paint the dot/total instantly
+  Store.set(key,card);   // syncs in the background — queues + retries if offline (course wifi, we're looking at you)
 }
 function updateEntryAfterSave(card){
   const {round,seg}=curEntryRefs();
@@ -2073,7 +2079,7 @@ async function setSegWeight(rid,segId,v){ const {seg}=findSeg(rid,segId); if(seg
 async function setFrozen(rid,on){ const r=State.config.rounds.find(x=>x.id===rid); if(r) r.frozen=on; await saveConfig(); renderAdmin(); }
 
 /* admin mutations */
-async function saveConfig(){ await Store.set('config',State.config); }
+async function saveConfig(){ Store.set('config',State.config); }   // fire-and-forget: Store already persists locally + queues for retry before its own network call, so the screen never waits on Netlify to re-render
 function setTeamName(id,v){ team(id).name=v; saveConfig(); }
 function setTeamColor(id,v){ team(id).color=v; saveConfig(); render(); }
 async function setRoundField(rid,field,val){ State.config.rounds.find(r=>r.id===rid)[field]=val; await saveConfig(); renderAdmin(); }
@@ -2185,12 +2191,12 @@ async function savePlayer(pid){
   const rec={ name, teamId:$('#pTeam').value, isCaptain:$('#pCap').checked };
   if(pid){ Object.assign(player(pid),rec); }
   else { rec.id='p'+Date.now().toString(36); rec.avatar=''; State.config.players.push(rec); pid=rec.id; }
-  // Handicap index lives in its own blob (shared source of truth for self-serve + admin)
-  if(raw===''){ delete State.hcps[pid]; await Store.del('hcp:'+pid); }
-  else { const index=Number(raw); State.hcps[pid]=index; await Store.set('hcp:'+pid,{index}); }
-  await saveConfig(); renderAdmin();
+  // Handicap index lives in its own blob (shared source of truth for self-serve + admin) — sync in the background
+  if(raw===''){ delete State.hcps[pid]; Store.del('hcp:'+pid); }
+  else { const index=Number(raw); State.hcps[pid]=index; Store.set('hcp:'+pid,{index}); }
+  saveConfig(); renderAdmin();
 }
-async function delPlayer(pid){ State.config.players=State.config.players.filter(p=>p.id!==pid); await saveConfig(); renderAdmin(); }
+async function delPlayer(pid){ State.config.players=State.config.players.filter(p=>p.id!==pid); saveConfig(); renderAdmin(); }
 
 async function seedSample(){
   // (Re)load the real trip roster from the itinerary, keeping any team/hcp/captain
