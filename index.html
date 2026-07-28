@@ -113,6 +113,24 @@ input,select{font-family:inherit;font-size:16px}
 .stepper .val small{display:block;font-family:'Inter';font-weight:600;font-size:12px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase}
 .stepper button.pm{width:60px;height:60px;border-radius:50%;background:var(--ink);color:var(--light);font-size:30px;font-weight:600;display:grid;place-items:center}
 .stepper button.pm:active{transform:scale(.94)}
+.sc-hole{text-align:center;font-family:'Oswald';font-weight:700;font-size:13px;letter-spacing:.16em;text-transform:uppercase;color:var(--text-dim);margin-bottom:1px}
+.sc-hole b{display:block;font-size:32px;letter-spacing:0;color:var(--text);font-weight:800;line-height:1.05;margin-top:1px}
+.sc-infobox{display:flex;max-width:220px;margin:0 auto 14px;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--paper)}
+.sc-infobox .cell{flex:1;padding:9px 6px;text-align:center;border-right:1px solid var(--line)}
+.sc-infobox .cell:last-child{border-right:none}
+.sc-infobox .cell b{display:block;font-family:'Oswald';font-size:19px;font-weight:700;color:var(--text)}
+.sc-infobox .cell small{display:block;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--text-dim);margin-top:2px}
+.sc-scorebox{width:118px;aspect-ratio:1;margin:2px auto 14px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-family:'Oswald';font-weight:800;font-size:46px;color:var(--text);background:var(--paper2);border:2px solid var(--line);transition:background .15s,border-color .15s,color .15s}
+.sc-scorebox.empty{background:transparent;border:2px dashed var(--line);color:transparent}
+.sc-scorebox.sc-won{background:#dff3df;border-color:#3f9142;color:#1f6b23}
+.sc-scorebox.sc-lost{background:#f7e3e1;border-color:var(--red);color:#a23a30}
+.sc-scorebox.sc-halved{background:#fbf0d6;border-color:var(--gold);color:#8a6a10}
+.sc-matchline{max-width:230px;margin:-4px auto 14px;text-align:center;font-family:'Oswald';font-weight:700;font-size:14px;padding:8px 10px;border-radius:10px;background:var(--paper2);color:var(--text)}
+.sc-matchline span{font-weight:500;color:var(--text-dim);font-size:11px;margin-left:4px;text-transform:uppercase;letter-spacing:.04em}
+.sc-matchline.sc-win{background:#dff3df;color:#1f6b23}
+.sc-matchline.sc-lose{background:#f7e3e1;color:#a23a30}
+.sc-matchline.sc-half{background:#fbf0d6;color:#8a6a10}
+.sc-matchline.sc-win span,.sc-matchline.sc-lose span,.sc-matchline.sc-half span{color:inherit;opacity:.65}
 .quickrow{display:flex;gap:8px;margin-bottom:6px}
 .quickrow button{flex:1;padding:11px;border-radius:10px;background:var(--paper2);font-weight:600;font-size:13px;border:1px solid var(--line)}
 .entered-by{text-align:center;font-size:11px;color:var(--text-dim);margin-top:10px}
@@ -822,7 +840,7 @@ function sideCH(ids, c, fmt){
   if(method==='usga') return chs.length===2 ? Math.round(0.35*chs[0]+0.15*chs[1]) : Math.round(chs.reduce((a,b)=>a+b,0)/chs.length);
   return chs[0]; // 'low' — side plays off its lowest handicap
 }
-function computeMatch(round, seg, match){
+function matchValFns(round, seg, match){
   const c=courseOf(round); const si=c?.si||[]; const fmt=seg.format;
   const isGroup=FORMATS[fmt]?.side==='group';
   let aVal, bVal;
@@ -838,6 +856,10 @@ function computeMatch(round, seg, match){
     const bestNet=(ids,h)=>{ let best=null; ids.forEach(id=>{ const g=State.cards[cardKey(round.id,seg.id,id)]?.holes?.[h]; if(g!=null){ const nt=g-strokeSheet(id,round,h); if(best==null||nt<best) best=nt; } }); return best; };
     aVal=(h)=>bestNet(match.a,h); bVal=(h)=>bestNet(match.b,h);
   }
+  return {aVal,bVal,isGroup};
+}
+function computeMatch(round, seg, match){
+  const {aVal,bVal}=matchValFns(round, seg, match);
   let aUp=0,bUp=0,played=0;
   for(let h=seg.start; h<=seg.end; h++){ const a=aVal(h), b=bVal(h); if(a==null||b==null) continue; played++; if(a<b)aUp++; else if(b<a)bUp++; }
   const total=seg.end-seg.start+1, remaining=total-played, diff=aUp-bUp;
@@ -860,6 +882,32 @@ function matchPointSplit(res){
   if(res.played===0) return null;
   if(res.diff===0) return {a:0.5,b:0.5};
   return res.diff>0 ? {a:1,b:0} : {a:0,b:1};
+}
+// which side of the match ('a'/'b') a given entry-side id corresponds to
+function entrySideOfMatch(seg, sideId, m){
+  if(FORMATS[seg.format]?.side==='group') return String(sideId).endsWith(':a') ? 'a' : 'b';
+  return m.a.includes(sideId) ? 'a' : 'b';
+}
+// did MY side win/lose/halve this specific hole? null = no opponent context or not enough data yet
+function holeOutcomeForSide(round, seg, sideId, hole){
+  const m=matchOfSide(seg, sideId); if(!m) return null;
+  const {aVal,bVal}=matchValFns(round, seg, m);
+  const imA=entrySideOfMatch(seg, sideId, m)==='a';
+  const mine=imA?aVal(hole):bVal(hole), theirs=imA?bVal(hole):aVal(hole);
+  if(mine==null || theirs==null) return {outcome:null};
+  return {outcome: mine<theirs?'won':(mine>theirs?'lost':'halved')};
+}
+// live match status from MY side's perspective ("2 UP · thru 5", not always A's perspective)
+function personalMatchStatus(round, seg, sideId){
+  const m=matchOfSide(seg, sideId); if(!m) return null;
+  const res=computeMatch(round, seg, m);
+  if(res.played===0) return {main:'Match not started yet', sub:'', cls:''};
+  const imA=entrySideOfMatch(seg, sideId, m)==='a';
+  const myDiff=imA?res.diff:-res.diff, u=Math.abs(myDiff);
+  if(myDiff===0) return res.remaining===0 ? {main:'Halved', sub:'', cls:'half'} : {main:'All Square', sub:`thru ${res.played}`, cls:'half'};
+  if(res.final && res.remaining>0) return {main: myDiff>0?`Won ${u}&${res.remaining}`:`Lost ${u}&${res.remaining}`, sub:'', cls: myDiff>0?'win':'lose'};
+  if(res.remaining===0) return {main:`${u} ${myDiff>0?'UP':'DOWN'}`, sub:'final', cls: myDiff>0?'win':'lose'};
+  return {main:`${u} ${myDiff>0?'UP':'DOWN'}`, sub:`thru ${res.played}`, cls: myDiff>0?'win':'lose'};
 }
 
 /* ---------- Standings ---------- */
@@ -965,7 +1013,7 @@ async function refresh(){
     const cfg=await Store.get('config'); if(cfg){ State.config=cfg; }
     updateSyncDot(Store.status());
     if(State.view==='board') updateBoard();
-    else if(State.view==='enter') updateSyncNote();
+    else if(State.view==='enter'){ const {round,seg,key}=curEntryRefs(); updateEntryAfterSave(State.cards[key]||{holes:{},enteredBy:''}); }
     else if(State.view==='roster' && getDraft().status==='live') render(false);
   }catch(e){}
 }
@@ -1372,6 +1420,10 @@ function viewEnter(){
   const strokeLine = (isIndiv && useHcp())
     ? `<div class="muted" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--gold)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b style="color:var(--gold)">•</b> marks a stroke hole${strokeThisHole?` · you get <b style="color:var(--gold)">${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'}</b> on hole ${State.entryHole}`:''}</div>`
     : '';
+  const scEntered = cur!=null;
+  const scOutcome = scEntered ? holeOutcomeForSide(round, seg, side.id, State.entryHole) : null;
+  const scCls = scOutcome?.outcome ? 'sc-'+scOutcome.outcome : '';
+  const mStatus = personalMatchStatus(round, seg, side.id);
 
   return `
   ${roundTabs}
@@ -1380,14 +1432,17 @@ function viewEnter(){
   ${sideTabs}
   ${strokeLine}
   <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
-      <div class="disp" style="font-size:20px;font-weight:600">Hole ${State.entryHole} <span style="color:var(--text-dim);font-size:14px">· Par ${par}</span></div>
-      <div class="mono" id="entryTotal" style="font-weight:700">${entryTotalHTML(card,round,seg,side.id)}</div>
+    <div class="sc-hole">Hole<b>${State.entryHole}</b></div>
+    <div class="mono" id="entryTotal" style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:12px">${entryTotalHTML(card,round,seg,side.id)}</div>
+    <div class="sc-infobox">
+      <div class="cell"><b>${par}</b><small>Par</small></div>
+      <div class="cell"><b>${strokeThisHole||'—'}</b><small>Strokes</small></div>
     </div>
+    <div class="sc-scorebox ${scEntered?scCls:'empty'}" id="scoreBox">${scEntered?cur:''}</div>
+    ${mStatus?`<div class="sc-matchline ${mStatus.cls?'sc-'+mStatus.cls:''}" id="scMatchLine">${esc(mStatus.main)}${mStatus.sub?`<span>· ${esc(mStatus.sub)}</span>`:''}</div>`:''}
     <div class="holepick" style="grid-template-columns:repeat(9,1fr)">${holeCells.join('')}</div>
     <div class="stepper">
       <button class="pm" id="minus">–</button>
-      <div class="val" id="strokeVal">${cur??par}<small>Strokes</small></div>
       <button class="pm" id="plus">+</button>
     </div>
     <div class="quickrow">
@@ -1430,26 +1485,21 @@ function prevHole(){
   render(false);
 }
 
-let saveTimer=null;
 function curEntryRefs(){
   const round=State.config.rounds.find(r=>r.id===State.activeRound);
   const seg=liveSegs(round).find(s=>s.id===State.entrySeg) || segsOf(round)[0];
   return {round, seg, key:cardKey(round.id,seg.id,State.entrySide)};
 }
 function wireEntry(){
-  const {round,seg,key}=curEntryRefs();
-  const card=State.cards[key]||{holes:{}};
+  const {round,seg}=curEntryRefs();
   const c=courseOf(round); const par=(c?.pars?.[State.entryHole-1])||4;
-  let val=card.holes?.[State.entryHole] ?? par;
-  const valEl=$('#strokeVal');
-  const paint=()=>{ if(valEl) valEl.innerHTML=`${val}<small>Strokes</small>`; };
   const plus=$('#plus'), minus=$('#minus');
-  if(plus) plus.onclick=()=>{ val=Math.min(15,val+1); paint(); queueSave(val); };
-  if(minus) minus.onclick=()=>{ val=Math.max(1,val-1); paint(); queueSave(val); };
-  window.setStroke=(v)=>{ val=v; paint(); queueSave(v); };
-  window.clearHole=()=>{ val=par; paint(); saveHole(null); };
+  const curVal=()=>{ const {key}=curEntryRefs(); return State.cards[key]?.holes?.[State.entryHole]; };
+  if(plus) plus.onclick=()=>{ const v=Math.min(15,(curVal()??par)+1); saveHole(v); };
+  if(minus) minus.onclick=()=>{ const v=Math.max(1,(curVal()??par)-1); saveHole(v); };
+  window.setStroke=(v)=>{ saveHole(v); };
+  window.clearHole=()=>{ saveHole(null); };
 }
-function queueSave(v){ clearTimeout(saveTimer); saveTimer=setTimeout(()=>saveHole(v), 350); }
 async function saveHole(v){
   const {round,key}=curEntryRefs();
   if(round?.frozen) return; // locked
@@ -1459,8 +1509,24 @@ async function saveHole(v){
   card.enteredBy=player(State.me)?.name||'—';
   card.updatedAt=Date.now();
   State.cards[key]=card;
-  if(State.view==='enter') updateEntryAfterSave(card);   // paint the dot/total instantly
-  Store.set(key,card);   // syncs in the background — queues + retries if offline (course wifi, we're looking at you)
+  if(State.view==='enter') updateEntryAfterSave(card);   // paint the box/dot/total instantly
+  Store.set(key,card);   // fires immediately — Store's own outbox protects this from a same-moment poll; syncs to Netlify in the background
+}
+function paintScoreBox(round, seg, sideId, hole, val){
+  const box=document.getElementById('scoreBox'); if(!box) return;
+  box.classList.remove('empty','sc-won','sc-lost','sc-halved');
+  if(val==null){ box.classList.add('empty'); box.textContent=''; return; }
+  box.textContent=val;
+  const oc=holeOutcomeForSide(round, seg, sideId, hole);
+  if(oc?.outcome) box.classList.add('sc-'+oc.outcome);
+}
+function paintMatchLine(round, seg, sideId){
+  const el=document.getElementById('scMatchLine'); if(!el) return;
+  const st=personalMatchStatus(round, seg, sideId);
+  if(!st){ el.style.display='none'; return; }
+  el.style.display='';
+  el.className='sc-matchline '+(st.cls?'sc-'+st.cls:'');
+  el.innerHTML = esc(st.main)+(st.sub?`<span>· ${esc(st.sub)}</span>`:'');
 }
 function updateEntryAfterSave(card){
   const {round,seg}=curEntryRefs();
@@ -1476,6 +1542,8 @@ function updateEntryAfterSave(card){
   if(tot) tot.innerHTML=entryTotalHTML(card, round, seg, State.entrySide);
   const eb=document.getElementById('enteredBy');
   if(eb) eb.textContent=card.enteredBy?`Last saved by ${card.enteredBy}`:'Not started';
+  paintScoreBox(round, seg, State.entrySide, State.entryHole, card.holes?.[State.entryHole] ?? null);
+  paintMatchLine(round, seg, State.entrySide);
   updateSyncNote();
 }
 
