@@ -318,13 +318,28 @@ const Store = (() => {
 
   const pendingVal = (key)=>{ const e=outbox.get(key); return e ? (e.op==='del'?null:e.value) : undefined; };
 
+  // ---- per-key write queue: guarantees writes to the SAME key reach the server in the order they were made.
+  // Without this, two rapid saves to one key (e.g. entering hole after hole) can fire overlapping network
+  // requests that arrive out of order, letting an earlier/incomplete write silently clobber a later one. ----
+  const writeTails = new Map();
+  function queuedWrite(key, op, value){
+    const prev = writeTails.get(key) || Promise.resolve();
+    const next = prev.then(async ()=>{
+      try{
+        if(op==='del') await sDel(key); else await sSet(key,value);
+        // only clear the outbox if nothing newer has queued behind us for this key
+        const cur=outbox.get(key);
+        if(cur && cur.op===op && (op==='del' || cur.value===value)){ outbox.delete(key); saveOutbox(); }
+        ok(); notify();
+      }catch(e){ fail(); notify(); }   // stays queued; flush() retries
+    });
+    writeTails.set(key, next);
+    return next;
+  }
+
   async function flush(){
     if(!outbox.size) return;
-    for(const [key,entry] of [...outbox]){
-      try{ if(entry.op==='del') await sDel(key); else await sSet(key, entry.value); outbox.delete(key); ok(); }
-      catch(e){ fail(); break; }   // network still down — keep the rest queued, retry next cycle
-    }
-    saveOutbox(); notify();
+    for(const [key,entry] of [...outbox]) queuedWrite(key, entry.op, entry.value);   // route through the same per-key queue
   }
 
   return {
@@ -348,14 +363,12 @@ const Store = (() => {
     async set(key,value){
       if(typeof State!=='undefined' && State.demo) return null;   // demo preview must never touch the real store
       lsSet(key,value); outbox.set(key,{op:'set',value}); saveOutbox(); notify();
-      try{ await sSet(key,value); outbox.delete(key); saveOutbox(); ok(); notify(); }
-      catch(e){ fail(); notify(); }    // stays queued; flush() retries
+      return queuedWrite(key,'set',value);
     },
     async del(key){
       if(typeof State!=='undefined' && State.demo) return null;   // demo preview must never touch the real store
       lsDel(key); outbox.set(key,{op:'del'}); saveOutbox(); notify();
-      try{ await sDel(key); outbox.delete(key); saveOutbox(); ok(); notify(); }
-      catch(e){ fail(); notify(); }
+      return queuedWrite(key,'del',null);
     },
     flush,
   };
@@ -374,7 +387,7 @@ const FORMATS = {
   betterball:{ label:'Better Ball',  side:'player', scoring:'match',     perSide:2, blurb:'Partners each play their own ball; the team counts the lower net score on each hole.' },
   shramble:  { label:'Shramble',     side:'player', scoring:'match',     perSide:2, blurb:'Team plays the best drive, then everyone plays their own ball in from there.' },
   scramble:  { label:'Scramble',     side:'group',  scoring:'match',     perSide:2, blurb:'Team plays one ball — best shot every time. One score per side, per hole.' },
-  teamtotal: { label:'Team Total',   side:'player', scoring:'aggregate', perSide:1, blurb:'Everyone plays their own ball; the team with the lower combined net wins the segment.' },
+  teamtotal: { label:'Team Total',   side:'player', scoring:'aggregate', perSide:2, blurb:'Everyone plays their own ball. Pair players into tee-time groups — each group\'s combined net decides that group\'s point. No pairings set yet? It falls back to comparing the two teams\' full combined net instead.' },
 };
 
 const AVATARS = ['⛳','🏌️','🏆','🎯','🦅','🐦','🍺','🥃','🚌','🕶️','🧢','🐐','🦈','🐊','🐅','🐯','🦍','🦏','🐺','🦁','🎩','👑','🃏','🎣','🐷','🦌','🍔','🌭','🏴‍☠️','⚡','🔥','💣','🎸','🎲','🚀','🛥️','🌊','🏖️','☕','🥩'];
@@ -859,6 +872,30 @@ function computeMatch(round, seg, match){
   const final=remaining===0 || clinched;
   return {aUp,bUp,played,remaining,diff,final};
 }
+// Aggregate scoring within one tee-time group (Team Total, when pairings exist): sum each side's net
+// across ITS OWN players only, not the whole field — this is the fix for "compare within each match".
+function computeAggregateMatch(round, seg, match){
+  const totalFor=(ids)=>{
+    let sum=0, thruMin=null, any=false;
+    ids.forEach(id=>{
+      const card=State.cards[cardKey(round.id,seg.id,id)];
+      const net=netForCard(id,card,false,round,seg.format);
+      const thru=holesPlayed(card||{holes:{}});
+      if(net!=null){ sum+=net; any=true; }
+      thruMin = thruMin==null ? thru : Math.min(thruMin,thru);
+    });
+    return {total:any?sum:null, thru:thruMin||0};
+  };
+  const A=totalFor(match.a), B=totalFor(match.b);
+  const total=seg.end-seg.start+1;
+  const thru=Math.min(A.thru,B.thru);
+  return {aTotal:A.total, bTotal:B.total, thru, remaining:total-thru, final:thru>=total};
+}
+function aggPointSplit(agg){
+  if(agg.aTotal==null || agg.bTotal==null) return null;
+  if(agg.aTotal===agg.bTotal) return {a:0.5,b:0.5};
+  return agg.aTotal<agg.bTotal ? {a:1,b:0} : {a:0,b:1};
+}
 function matchStatusText(res){
   const p=matchStatusParts(res); return p.sub?`${p.main} · ${p.sub}`:p.main;
 }
@@ -892,6 +929,16 @@ function holeOutcomeForSide(round, seg, sideId, hole){
 // live match status from MY side's perspective ("2 UP · thru 5", not always A's perspective)
 function personalMatchStatus(round, seg, sideId){
   const m=matchOfSide(seg, sideId); if(!m) return null;
+  const isAgg=FORMATS[seg.format]?.scoring==='aggregate';
+  if(isAgg){
+    const agg=computeAggregateMatch(round, seg, m);
+    if(agg.thru===0 || agg.aTotal==null || agg.bTotal==null) return {main:'Group not started yet', sub:'', cls:''};
+    const imA=entrySideOfMatch(seg, sideId, m)==='a';
+    const mine=imA?agg.aTotal:agg.bTotal, theirs=imA?agg.bTotal:agg.aTotal;
+    const diff=theirs-mine, sub=agg.final?'final':`thru ${agg.thru}`;
+    if(diff===0) return {main:'Tied', sub, cls:'half'};
+    return {main:`${diff>0?'+':''}${diff} strokes`, sub, cls:diff>0?'win':'lose'};
+  }
   const res=computeMatch(round, seg, m);
   if(res.played===0) return {main:'Match not started yet', sub:'', cls:''};
   const imA=entrySideOfMatch(seg, sideId, m)==='a';
@@ -917,12 +964,36 @@ function entryNetForHole(round, seg, sideId, hole, gross){
   if(gross==null || !useHcp()) return gross;
   return gross - entryStrokesForHole(round, seg, sideId, hole);
 }
+// net contribution of an entire group (all its players) on one hole — only counts once everyone in the group has entered that hole
+function groupHoleNet(round, seg, ids, hole){
+  let sum=0, allIn=true;
+  ids.forEach(id=>{
+    const card=State.cards[cardKey(round.id,seg.id,id)];
+    const g=card?.holes?.[hole];
+    if(g==null){ allIn=false; return; }
+    sum += entryNetForHole(round,seg,id,hole,g);
+  });
+  return allIn ? sum : null;
+}
 // cumulative match state through each hole, from MY side's perspective — for the per-hole "+/-" row
 function matchProgressionForSide(round, seg, sideId){
   const m=matchOfSide(seg, sideId); if(!m) return null;
-  const {aVal,bVal}=matchValFns(round, seg, m);
+  const isAgg=FORMATS[seg.format]?.scoring==='aggregate';
   const imA=entrySideOfMatch(seg, sideId, m)==='a';
-  const out={}; let aUp=0,bUp=0;
+  const out={};
+  if(isAgg){
+    let aCum=0,bCum=0;
+    for(let h=seg.start; h<=seg.end; h++){
+      const an=groupHoleNet(round,seg,m.a,h), bn=groupHoleNet(round,seg,m.b,h);
+      if(an==null||bn==null){ out[h]=null; continue; }
+      aCum+=an; bCum+=bn;
+      const diff = imA ? (bCum-aCum) : (aCum-bCum);   // positive = my group's cumulative net is lower (ahead)
+      out[h] = {diff, isAgg:true};
+    }
+    return out;
+  }
+  const {aVal,bVal}=matchValFns(round, seg, m);
+  let aUp=0,bUp=0;
   for(let h=seg.start; h<=seg.end; h++){
     const a=aVal(h), b=bVal(h);
     const settled = a!=null && b!=null;
@@ -934,6 +1005,10 @@ function matchProgressionForSide(round, seg, sideId){
 }
 function matchCellLabel(entry){
   if(!entry) return {text:'', cls:''};
+  if(entry.isAgg){
+    if(entry.diff===0) return {text:'E', cls:'as'};
+    return {text:`${entry.diff>0?'+':''}${entry.diff}`, cls: entry.diff>0?'win':'lose'};
+  }
   if(entry.diff===0) return {text:'AS', cls:'as'};
   return {text:`${Math.abs(entry.diff)}${entry.diff>0?'UP':'DN'}`, cls: entry.diff>0?'win':'lose'};
 }
@@ -956,7 +1031,10 @@ function pointsAvailable(){
   (State.config.rounds||[]).forEach(r=>segsOf(r).forEach(seg=>{
     if(!seg.format) return;
     const w=segWeight(seg);
-    if(FORMATS[seg.format]?.scoring==='aggregate'){ if(teamsHavePlayers) n+=w; }
+    if(FORMATS[seg.format]?.scoring==='aggregate'){
+      const ms=segMatches(seg);
+      n += ms.length ? ms.length*w : (teamsHavePlayers ? w : 0);
+    }
     else { n += segMatches(seg).length*w; }
   }));
   return n;
@@ -969,15 +1047,16 @@ function tripPoints(){
       if(!seg.format) return;
       const w=segWeight(seg);
       const isAgg=FORMATS[seg.format]?.scoring==='aggregate';
-      const ms=isAgg?[]:segMatches(seg);
+      const ms=segMatches(seg);
       if(ms.length){
         ms.forEach(m=>{
-          const sp=matchPointSplit(computeMatch(r,seg,m)); if(!sp) return;
+          const sp=isAgg ? aggPointSplit(computeAggregateMatch(r,seg,m)) : matchPointSplit(computeMatch(r,seg,m));
+          if(!sp) return;
           const aT=teamOfSide(m.a), bT=teamOfSide(m.b);
           if(aT) pts[aT]=(pts[aT]||0)+sp.a*w;
           if(bT) pts[bT]=(pts[bT]||0)+sp.b*w;
         });
-      } else {
+      } else if(isAgg){
         const tn=segTeamNet(r,seg); const entries=Object.entries(tn).filter(([,v])=>v.played);
         if(entries.length<2) return;
         entries.sort((a,b)=>a[1].net-b[1].net);
@@ -1315,6 +1394,33 @@ function setRound(id){ State.activeRound=id; render(false); }
 function teamTotalBoard(round,seg){
   const c=courseOf(round);
   const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · Team Total${fmtInfo('teamtotal')} · ${esc(c?.name||'Course TBD')}</div>`;
+  const ms=segMatches(seg);
+  if(ms.length){
+    const [TA,TB]=State.config.teams;
+    const matchHead=`<div class="match-head"><span style="color:${TA.color}">${esc(TA.name)}</span><span></span><span style="color:${TB.color}">${esc(TB.name)}</span></div>`;
+    const avs=(ids)=>`<span class="mav">${ids.map(id=>avatarOf(id)).join('')}</span>`;
+    const nms=(ids)=>`<span class="mnames">${ids.map(id=>`<span>${esc(displayName(id))}</span>`).join('')}</span>`;
+    const rows=ms.map(m=>{
+      const agg=computeAggregateMatch(round,seg,m);
+      const aIsLeft=teamOfSide(m.a)===TA.id;
+      const left=aIsLeft?m.a:m.b, right=aIsLeft?m.b:m.a;
+      const leftTotal=aIsLeft?agg.aTotal:agg.bTotal, rightTotal=aIsLeft?agg.bTotal:agg.aTotal;
+      const haveBoth = leftTotal!=null && rightTotal!=null;
+      const leftLead = haveBoth && leftTotal<rightTotal;
+      const rightLead = haveBoth && rightTotal<leftTotal;
+      const statusMain = haveBoth ? `${Math.round(leftTotal)} – ${Math.round(rightTotal)}` : '—';
+      const statusSub = agg.thru>0 ? (agg.final?'final':`thru ${agg.thru}`) : '';
+      return `<div class="matchwrap"><div class="match">
+        <div class="mside ${leftLead?'win':''}" style="--tc:${TA.color};${leftLead?'background:'+tint(TA.color,.2):''}">${avs(left)}${nms(left)}</div>
+        <div class="mstatus"><b>${statusMain}</b>${statusSub?`<span class="ssub">${esc(statusSub)}</span>`:''}</div>
+        <div class="mside b ${rightLead?'win':''}" style="--tc:${TB.color};${rightLead?'background:'+tint(TB.color,.2):''}">${nms(right)}${avs(right)}</div>
+      </div></div>`;
+    }).join('');
+    return `<div class="card">${head}${matchHead}${rows}
+      <div class="muted" style="margin-top:8px;font-size:11px">Each tee-time group's combined net decides that group's point — lower total wins the group.</div>
+    </div>`;
+  }
+  // fallback: no pairings set yet — compare the two whole teams (old behavior)
   const tn=segTeamNet(round,seg);
   const teams=(State.config.teams||[]).map(t=>({t, net:tn[t.id]?.net, played:tn[t.id]?.played}));
   const playedTeams=teams.filter(x=>x.played);
@@ -1328,7 +1434,7 @@ function teamTotalBoard(round,seg){
     </div>`;
   }).join('');
   return `<div class="card">${head}${rows}
-    <div class="muted" style="margin-top:8px;font-size:11px">Lower combined net wins the segment. Every player enters their own ball.</div>
+    <div class="muted" style="margin-top:8px;font-size:11px">No tee-time pairings set — comparing the two teams' full combined net. Add pairings in Admin to score it by group instead.</div>
   </div>`;
 }
 function segMatchBoard(round,seg){
@@ -2057,10 +2163,8 @@ function renderAdmin(){
         <label>${r.split?esc(seg.label)+' format':'Format'}</label>
         <select onchange="setSegFormat('${r.id}','${seg.id}',this.value)">${fmtOptions(seg.format)}</select>
         ${seg.format?`<div style="display:flex;gap:8px;margin-top:6px;align-items:center">
-          ${FORMATS[seg.format]?.scoring==='aggregate'
-            ? `<div style="flex:1;font-size:12px;color:var(--text-dim)">Team total — no pairings needed</div>`
-            : `<button class="btn ghost sm" style="flex:1" onclick="renderPairings('${r.id}','${seg.id}')">Pairings · ${segMatches(seg).length} match${segMatches(seg).length===1?'':'es'}</button>`}
-          <div style="display:flex;align-items:center;gap:5px"><span style="font-size:11px;color:var(--text-dim)">${FORMATS[seg.format]?.scoring==='aggregate'?'pts':'pts/match'}</span><input type="number" min="0" step="0.5" value="${segWeight(seg)}" onchange="setSegWeight('${r.id}','${seg.id}',this.value)" style="width:52px;padding:7px;border-radius:8px;border:1px solid var(--line);text-align:center"/></div>
+          <button class="btn ghost sm" style="flex:1" onclick="renderPairings('${r.id}','${seg.id}')">Pairings · ${segMatches(seg).length} match${segMatches(seg).length===1?'':'es'}</button>
+          <div style="display:flex;align-items:center;gap:5px"><span style="font-size:11px;color:var(--text-dim)">pts/match</span><input type="number" min="0" step="0.5" value="${segWeight(seg)}" onchange="setSegWeight('${r.id}','${seg.id}',this.value)" style="width:52px;padding:7px;border-radius:8px;border:1px solid var(--line);text-align:center"/></div>
         </div>`:''}
       </div>`).join('');
     return `
