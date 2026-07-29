@@ -1560,8 +1560,6 @@ function viewEnter(){
 
   const isIndiv = side.kind==='player';
   const si = c?.si||[];
-  const strokesOn = (h)=> (isIndiv && useHcp()) ? strokeSheet(side.id, round, h) : 0;
-  let segStrokes=0; for(let h=seg.start; h<=seg.end; h++) segStrokes+=strokesOn(h);
 
   const segHoleCount=seg.end-seg.start+1;
   const holes=[]; for(let h=seg.start; h<=seg.end; h++) holes.push(h);
@@ -1608,10 +1606,7 @@ function viewEnter(){
   const par=pars[State.entryHole-1]||4;
   const g=grossTotal(card), thru=holesPlayed(card);
   const enteredBy=card.enteredBy?`Last saved by ${esc(card.enteredBy)}`:'Not started';
-  const strokeThisHole=strokesOn(State.entryHole);
-  const strokeLine = (isIndiv && useHcp())
-    ? `<div class="muted" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--gold)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b style="color:var(--gold)">•</b> marks a stroke hole${strokeThisHole?` · you get <b style="color:var(--gold)">${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'}</b> on hole ${State.entryHole}`:''}</div>`
-    : '';
+  const strokeLine = strokeLineHTML(round, seg, side.id, State.entryHole, isIndiv);
 
   return `
   ${roundTabs}
@@ -1672,7 +1667,37 @@ function curEntryRefs(){
   const seg=liveSegs(round).find(s=>s.id===State.entrySeg) || segsOf(round)[0];
   return {round, seg, key:cardKey(round.id,seg.id,State.entrySide)};
 }
-function selectCell(hole, pid){ State.entrySide=pid; State.entryHole=hole; render(false); }
+function strokeLineHTML(round, seg, pid, hole, isIndiv){
+  if(!isIndiv || !useHcp()) return '';
+  let segStrokes=0; for(let h=seg.start; h<=seg.end; h++) segStrokes+=entryStrokesForHole(round,seg,pid,h);
+  const strokeThisHole=entryStrokesForHole(round,seg,pid,hole);
+  return `<div class="muted" id="strokeLine" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--gold)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b style="color:var(--gold)">•</b> marks a stroke hole${strokeThisHole?` · you get <b style="color:var(--gold)">${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'}</b> on hole ${hole}`:''}</div>`;
+}
+function selectCell(hole, pid){
+  const prevSide=State.entrySide, prevHole=State.entryHole;
+  State.entrySide=pid; State.entryHole=hole;
+  const oldBtn=document.getElementById('hole-'+prevHole+'-'+prevSide);
+  if(oldBtn) oldBtn.classList.remove('on');
+  const newBtn=document.getElementById('hole-'+hole+'-'+pid);
+  if(newBtn) newBtn.classList.add('on');
+  if(prevHole!==hole){
+    document.querySelectorAll('.sc-h').forEach(el=>el.classList.remove('on'));
+    const {seg}=curEntryRefs(); const idx=hole-seg.start;
+    const holeCells=document.querySelectorAll('.sc-h');
+    if(holeCells[idx]) holeCells[idx].classList.add('on');
+  }
+  const {round,seg,key}=curEntryRefs();
+  const card=State.cards[key]||{holes:{}};
+  const par=(courseOf(round)?.pars?.[hole-1])||4;
+  const valEl=document.getElementById('strokeVal');
+  if(valEl) valEl.innerHTML=`${card.holes?.[hole] ?? par}<small>Strokes · Hole ${hole}</small>`;
+  const tot=document.getElementById('entryTotal');
+  if(tot) tot.innerHTML=entryTotalHTML(card, round, seg, pid);
+  const sl=document.getElementById('strokeLine');
+  const editable=editableSidesForSeg(round,seg);
+  const side=editable.find(s=>s.id===pid);
+  if(sl) sl.outerHTML=strokeLineHTML(round, seg, pid, hole, side?.kind==='player');
+}
 function wireEntry(){
   const {round,seg}=curEntryRefs();
   const c=courseOf(round); const par=(c?.pars?.[State.entryHole-1])||4;
