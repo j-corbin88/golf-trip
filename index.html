@@ -108,6 +108,7 @@ input,select{font-family:inherit;font-size:16px}
 .sc-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px 14px;padding:0 16px}
 .sc-table{display:grid;gap:4px;width:max-content}
 .sc-h{text-align:center;font-family:'Oswald';font-weight:600;font-size:13px;color:var(--text-dim);padding:2px 0}
+.sc-plabel{display:flex;align-items:center;font-size:11px;font-weight:700;color:var(--text-dim);padding-right:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sc-h.on{color:var(--text);font-weight:800}
 .sc-box{aspect-ratio:1;border-radius:8px;background:var(--paper2);border:1px solid var(--line);font-family:'Oswald';font-weight:700;font-size:15px;color:var(--text);display:flex;align-items:center;justify-content:center;position:relative}
 .sc-box sup{font-size:9px;color:var(--red);font-weight:800;margin-left:1px;top:-.6em}
@@ -917,6 +918,13 @@ function entrySideOfMatch(seg, sideId, m){
   if(FORMATS[seg.format]?.side==='group') return String(sideId).endsWith(':a') ? 'a' : 'b';
   return m.a.includes(sideId) ? 'a' : 'b';
 }
+// teammates sharing this player's side of the match (better ball / shramble / Team Total pairs) — null if solo or a shared-card group format
+function partnerSideIds(seg, sideId){
+  if(FORMATS[seg.format]?.side==='group') return null;   // foursomes/scramble already share one card
+  const m=matchOfSide(seg, sideId); if(!m) return null;
+  const mySide = entrySideOfMatch(seg, sideId, m)==='a' ? m.a : m.b;
+  return mySide.length>1 ? mySide : null;
+}
 // did MY side win/lose/halve this specific hole? null = no opponent context or not enough data yet
 function holeOutcomeForSide(round, seg, sideId, hole){
   const m=matchOfSide(seg, sideId); if(!m) return null;
@@ -1558,22 +1566,43 @@ function viewEnter(){
   const segHoleCount=seg.end-seg.start+1;
   const holes=[]; for(let h=seg.start; h<=seg.end; h++) holes.push(h);
   const progression = personalMatchStatus(round, seg, side.id) ? matchProgressionForSide(round, seg, side.id) : null;
+  const partners = partnerSideIds(seg, side.id);   // teammates sharing this match side (better ball/shramble/Team Total), else null
 
-  const rowHole = holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
-  const rowPar = holes.map(h=>{
-    const sN=entryStrokesForHole(round,seg,side.id,h);
-    return `<div class="sc-box sc-par">${pars[h-1]||'—'}${sN>0?`<sup>${sN}</sup>`:''}</div>`;
-  }).join('');
-  const rowScore = holes.map(h=>{
-    const v=card.holes?.[h];
-    const net=v!=null?entryNetForHole(round,seg,side.id,h,v):null;
+  const scoreCell = (h,pid)=>{
+    const c2 = pid===side.id ? card : (State.cards[cardKey(round.id,seg.id,pid)]||{holes:{}});
+    const v=c2.holes?.[h];
+    const net=v!=null?entryNetForHole(round,seg,pid,h,v):null;
     const showNet = v!=null && useHcp() && net!==v;
-    return `<button id="hole-${h}" class="sc-box sc-score ${h===State.entryHole?'on':''} ${v!=null?'done':''}" onclick="setHole(${h})">${v??''}${showNet?`<sup>${net}</sup>`:''}</button>`;
-  }).join('');
-  const rowMatch = progression ? holes.map(h=>{
-    const {text,cls}=matchCellLabel(progression[h]);
-    return `<div class="sc-box sc-match ${cls}">${text}</div>`;
-  }).join('') : '';
+    return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="selectCell(${h},'${pid}')">${v??''}${showNet?`<sup>${net}</sup>`:''}</button>`;
+  };
+
+  let tableHTML;
+  if(partners){
+    const lbl=(t)=>`<div class="sc-plabel">${esc(t)}</div>`;
+    const rowHole = lbl('')+holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
+    const rowPar = lbl('Par')+holes.map(h=>`<div class="sc-box sc-par">${pars[h-1]||'—'}</div>`).join('');
+    const playerRows = partners.map(pid=>lbl(displayName(pid))+holes.map(h=>scoreCell(h,pid)).join('')).join('');
+    const rowMatch = progression ? lbl('')+holes.map(h=>{ const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }).join('') : '';
+    tableHTML = `<div class="sc-scroll">
+      <div class="sc-table" style="grid-template-columns:62px repeat(${holes.length},44px)">
+        ${rowHole}${rowPar}${playerRows}<div id="matchRow" style="display:contents">${rowMatch}</div>
+      </div>
+      </div>
+      <div class="muted" style="font-size:11px;margin:-6px 2px 12px">Tap either partner's box below to enter for them — no need to switch tabs.</div>`;
+  } else {
+    const rowHole = holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
+    const rowPar = holes.map(h=>{
+      const sN=entryStrokesForHole(round,seg,side.id,h);
+      return `<div class="sc-box sc-par">${pars[h-1]||'—'}${sN>0?`<sup>${sN}</sup>`:''}</div>`;
+    }).join('');
+    const rowScore = holes.map(h=>scoreCell(h,side.id)).join('');
+    const rowMatch = progression ? holes.map(h=>{ const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }).join('') : '';
+    tableHTML = `<div class="sc-scroll">
+      <div class="sc-table" style="grid-template-columns:repeat(${holes.length},44px)">
+        ${rowHole}${rowPar}${rowScore}<div id="matchRow" style="display:contents">${rowMatch}</div>
+      </div>
+      </div>`;
+  }
 
   const cur=card.holes?.[State.entryHole];
   const par=pars[State.entryHole-1]||4;
@@ -1592,11 +1621,7 @@ function viewEnter(){
   ${strokeLine}
   <div class="card">
     <div class="mono" id="entryTotal" style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:10px">${entryTotalHTML(card,round,seg,side.id)}</div>
-    <div class="sc-scroll">
-    <div class="sc-table" style="grid-template-columns:repeat(${holes.length},44px)">
-      ${rowHole}${rowPar}${rowScore}<div id="matchRow" style="display:contents">${rowMatch}</div>
-    </div>
-    </div>
+    ${tableHTML}
     <div class="stepper">
       <button class="pm" id="minus">–</button>
       <div class="val" id="strokeVal">${cur??par}<small>Strokes · Hole ${State.entryHole}</small></div>
@@ -1647,6 +1672,7 @@ function curEntryRefs(){
   const seg=liveSegs(round).find(s=>s.id===State.entrySeg) || segsOf(round)[0];
   return {round, seg, key:cardKey(round.id,seg.id,State.entrySide)};
 }
+function selectCell(hole, pid){ State.entrySide=pid; State.entryHole=hole; render(false); }
 function wireEntry(){
   const {round,seg}=curEntryRefs();
   const c=courseOf(round); const par=(c?.pars?.[State.entryHole-1])||4;
@@ -1656,7 +1682,7 @@ function wireEntry(){
   if(minus) minus.onclick=()=>{ const v=Math.max(1,(curVal()??par)-1); saveHole(v); };
   window.setStroke=(v)=>{ saveHole(v); };
   window.clearHole=()=>{ saveHole(null); };
-  const selCell=document.getElementById('hole-'+State.entryHole);
+  const selCell=document.getElementById('hole-'+State.entryHole+'-'+State.entrySide);
   if(selCell && typeof selCell.scrollIntoView==='function') selCell.scrollIntoView({inline:'center', block:'nearest'});
 }
 const recentLocalWrite=new Map();   // storage key -> timestamp until which local data should win over a poll fetch
@@ -1674,9 +1700,9 @@ async function saveHole(v){
   Store.set(key,card);   // fires immediately — Store's own outbox protects this from a same-moment poll; syncs to Netlify in the background
 }
 function paintScoreCell(round, seg, sideId, hole){
-  const btn=document.getElementById('hole-'+hole); if(!btn) return;
-  const {key}=curEntryRefs(); const v=State.cards[key]?.holes?.[hole];
-  btn.classList.toggle('on', hole===State.entryHole);
+  const btn=document.getElementById('hole-'+hole+'-'+sideId); if(!btn) return;
+  const v=State.cards[cardKey(round.id,seg.id,sideId)]?.holes?.[hole];
+  btn.classList.toggle('on', hole===State.entryHole && sideId===State.entrySide);
   btn.classList.toggle('done', v!=null);
   if(v==null){ btn.innerHTML=''; return; }
   const net=entryNetForHole(round,seg,sideId,hole,v);
@@ -1694,7 +1720,9 @@ function updateEntryAfterSave(card){
   const {round,seg}=curEntryRefs();
   const valEl=document.getElementById('strokeVal');
   if(valEl){ const par=courseOf(round)?.pars?.[State.entryHole-1]||4; valEl.innerHTML=`${card.holes?.[State.entryHole] ?? par}<small>Strokes · Hole ${State.entryHole}</small>`; }
-  paintScoreCell(round, seg, State.entrySide, State.entryHole);
+  const partners=partnerSideIds(seg, State.entrySide);
+  if(partners){ partners.forEach(pid=>paintScoreCell(round, seg, pid, State.entryHole)); }
+  else { paintScoreCell(round, seg, State.entrySide, State.entryHole); }
   paintMatchRow(round, seg, State.entrySide);
   const tot=document.getElementById('entryTotal');
   if(tot) tot.innerHTML=entryTotalHTML(card, round, seg, State.entrySide);
