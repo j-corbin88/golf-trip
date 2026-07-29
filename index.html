@@ -1028,7 +1028,7 @@ const segWeight = (seg)=> (seg?.weight!=null && seg.weight!=='') ? Number(seg.we
 function pointsAvailable(){
   let n=0;
   const teamsHavePlayers = (State.config.teams||[]).length>0 && (State.config.teams||[]).every(t=>teamRoster(t.id).length>0);
-  (State.config.rounds||[]).forEach(r=>segsOf(r).forEach(seg=>{
+  (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>segsOf(r).forEach(seg=>{
     if(!seg.format) return;
     const w=segWeight(seg);
     if(FORMATS[seg.format]?.scoring==='aggregate'){
@@ -1042,7 +1042,7 @@ function pointsAvailable(){
 function pointsToClinch(){ const a=pointsAvailable(); return a>0 ? a/2 + 0.5 : 0; }
 function tripPoints(){
   const pts={}; (State.config.teams||[]).forEach(t=>pts[t.id]=0);
-  (State.config.rounds||[]).forEach(r=>{
+  (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>{
     segsOf(r).forEach(seg=>{
       if(!seg.format) return;
       const w=segWeight(seg);
@@ -1068,8 +1068,8 @@ function tripPoints(){
   return pts;
 }
 // count of scorable segments across the trip (for the "x of y" footer)
-function liveSegCount(){ let n=0; (State.config.rounds||[]).forEach(r=>segsOf(r).forEach(s=>{ if(s.format) n++; })); return n; }
-function totalSegCount(){ let n=0; (State.config.rounds||[]).forEach(r=>n+=segsOf(r).length); return n; }
+function liveSegCount(){ let n=0; (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>segsOf(r).forEach(s=>{ if(s.format) n++; })); return n; }
+function totalSegCount(){ let n=0; (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>n+=segsOf(r).length); return n; }
 const roundLive = (r)=> segsOf(r).some(s=>s.format);
 const liveSegs = (r)=> segsOf(r).filter(s=>s.format);
 
@@ -1324,7 +1324,7 @@ function updateSyncNote(){
 }
 function boardBodyHTML(){
   const cfg=State.config;
-  const rounds=cfg.rounds.filter(r=>roundLive(r));
+  const rounds=cfg.rounds.filter(r=>roundLive(r) && !r.test);
   const tabs=rounds.length? `<div class="lb-round-tab">
     ${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setRound('${r.id}')">${esc(r.name)}${r.split?' · split':''}</button>`).join('')}
   </div>`:'';
@@ -2287,10 +2287,33 @@ function renderAdmin(){
       <div class="muted" style="font-size:11px;margin-top:6px">Fills every screen with realistic fake scores so you can see how it'll look mid-trip. It stays on your phone, never syncs to anyone, and isn't saved — tap "Exit demo" to clear it.</div>
 
       <div class="divider"></div>
+      <div class="eyebrow">🧪 Test Round</div>
+      ${cfg.rounds.some(r=>r.test)
+        ? `<div class="muted" style="margin-bottom:8px">A test round is live — it shows up in Enter Score and Rounds like any other day, but it's completely walled off from your real standings and points.</div>
+           <button class="btn ghost sm" style="width:100%;color:var(--red);border-color:var(--red)" onclick="removeTestRound()">Remove test round &amp; its scores</button>`
+        : `<button class="btn ghost sm" style="width:100%" onclick="addTestRound()">Add a test round</button>
+           <div class="muted" style="font-size:11px;margin-top:6px">Demo mode never touches the network, so it can't test real sync. This adds a real, live round — anyone can open the app on their own phone and enter real scores through the real sync path (weak signal, backgrounding, all of it) with zero risk to the actual tournament. Delete it before the trip.</div>`}
+
+      <div class="divider"></div>
       <div class="eyebrow">Danger zone</div>
       <button class="btn ghost sm" onclick="resetScores()" style="color:var(--red);border-color:var(--red)">Clear all scores</button>
     </div>
   `);
+}
+async function addTestRound(){
+  const cid=(State.config.courses||[])[0]?.id;
+  State.config.rounds.push({
+    id:'rtest', test:true, name:'🧪 Test Round (practice)', dateLabel:'Practice', courseId:cid, split:false,
+    segments:[{id:'f', label:'All 18', start:1, end:18, format:'singles', matches:[], weight:1}]
+  });
+  await saveConfig(); renderAdmin();
+}
+async function removeTestRound(){
+  const keys=Object.keys(State.cards).filter(k=>k.startsWith('card:rtest:'));
+  for(const k of keys){ Store.del(k); delete State.cards[k]; }
+  State.config.rounds=State.config.rounds.filter(r=>!r.test);
+  if(State.activeRound==='rtest') State.activeRound=null;
+  await saveConfig(); renderAdmin();
 }
 async function setScrambleHcp(v){ State.config.settings.scrambleHcp=v; await saveConfig(); renderAdmin(); }
 async function setUseHandicaps(on){ State.config.settings.useHandicaps=on; await saveConfig(); renderAdmin(); }
