@@ -567,6 +567,7 @@ const DEFAULT_CONFIG = () => ({
     scrambleHcp:'low',
     useHandicaps:true,
     hcpLocked:false,
+    voteFrozen:false,
     allowance:{singles:100, betterball:85, shramble:100, scramble:100},
   },
   teams:[ {id:'t1',name:'Team Gold',color:'#E5A823'}, {id:'t2',name:'Team Blue',color:'#1E5FA8'} ],
@@ -1830,10 +1831,12 @@ function viewRoster(){
   const voteCard = (d.status==='none') ? `<div class="card">
     <div class="eyebrow">Captain Vote</div>
     <h3 style="font-size:18px;text-transform:uppercase;margin-bottom:6px">Vote for two captains</h3>
-    ${State.me
-      ? (mv.length ? `<p class="muted" style="margin-bottom:10px">You picked <b style="color:var(--text)">${esc(mvNames)}</b>${mv.length<2?' — you have one more pick':''}.</p><button class="btn ${mv.length<2?'gold':'ghost'}" onclick="renderVoteModal()">${mv.length<2?'Use your second pick':'Change my picks'}</button>`
-            : `<button class="btn gold" onclick="renderVoteModal()">Cast your two votes</button>`)
-      : `<button class="btn gold" onclick="openIdentity()">Sign in to vote</button>`}
+    ${State.config.settings.voteFrozen
+      ? `<p class="muted" style="margin-bottom:6px">🔒 Voting is closed.${mv.length?` You picked <b style="color:var(--text)">${esc(mvNames)}</b>.`:''}</p>`
+      : (State.me
+          ? (mv.length ? `<p class="muted" style="margin-bottom:10px">You picked <b style="color:var(--text)">${esc(mvNames)}</b>${mv.length<2?' — you have one more pick':''}.</p><button class="btn ${mv.length<2?'gold':'ghost'}" onclick="renderVoteModal()">${mv.length<2?'Use your second pick':'Change my picks'}</button>`
+                : `<button class="btn gold" onclick="renderVoteModal()">Cast your two votes</button>`)
+          : `<button class="btn gold" onclick="openIdentity()">Sign in to vote</button>`)}
     <p class="muted" style="margin-top:10px;font-size:11px">${voteCount()} of ${players.length} have voted · the commissioner tallies the results.</p>
   </div>` : '';
   return `${voteCard}<div class="eyebrow">The Field · ${players.length} players</div>${blocks}${un}`;
@@ -1894,7 +1897,7 @@ function voteTally(){ const t={}; Object.values(State.votes).forEach(arr=>{ (arr
 function voteTopN(n){ return Object.entries(voteTally()).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([id])=>id); }
 function voteCount(){ return Object.keys(State.votes).filter(k=>(State.votes[k]||[]).length>0).length; }
 function toggleVote(choiceId){
-  if(!State.me) return;
+  if(!State.me || State.config.settings.voteFrozen) return;
   let cur=(State.votes[State.me]||[]).slice();
   if(cur.includes(choiceId)) cur=cur.filter(x=>x!==choiceId);
   else { if(cur.length>=2) return; cur.push(choiceId); }
@@ -1925,6 +1928,11 @@ function updateVoteRows(){
 }
 function renderVoteModal(){
   if(!State.me){ openIdentity(); return; }
+  if(State.config.settings.voteFrozen){
+    showModal(`<div class="modal-h"><h2>Voting is closed</h2><p class="muted" style="margin:4px 0 0">The commissioner has locked the captain vote.</p></div>
+      <div class="modal-b"><button class="btn ghost" onclick="closeModal()">Got it</button></div>`);
+    return;
+  }
   const mine=myVotes();
   const rows=(State.config.players||[]).map(p=>{
     const on=mine.includes(p.id);
@@ -1958,13 +1966,19 @@ function renderVoteResults(){
     <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Captain Vote</h2><button class="btn sm ghost" onclick="renderAdmin()">Back</button></div>
     <div class="modal-b">
       <div class="muted" style="margin-bottom:10px">${total} of ${roster} have voted (${bothCount} used both picks). Each person votes for two. ⭐ marks the current top two.</div>
-      <button class="btn ghost sm" style="width:100%;margin-bottom:12px" onclick="refresh().then(renderVoteResults)">↻ Refresh results</button>
+      <button class="btn ghost sm" style="width:100%;margin-bottom:8px" onclick="refresh().then(renderVoteResults)">↻ Refresh results</button>
+      <button class="btn sm" style="width:100%;margin-bottom:12px;${State.config.settings.voteFrozen?'background:var(--red);color:#fff':'background:var(--ink);color:var(--light)'}" onclick="toggleVoteFreeze()">${State.config.settings.voteFrozen?'🔓 Unfreeze voting':'🔒 Freeze voting'}</button>
       <div class="eyebrow">Tally · who voted for whom</div>
       <div style="margin-bottom:12px">${tallyRows}</div>
       ${oneVoters.length?`<div class="muted" style="font-size:12px;margin-bottom:8px"><b>One vote remaining:</b> ${esc(oneVoters.join(', '))}</div>`:''}
       ${nonVoters.length?`<div class="muted" style="font-size:12px;margin-bottom:12px"><b>Haven't voted:</b> ${esc(nonVoters.join(', '))}</div>`:''}
       ${ranked.length>=2?`<button class="btn gold" onclick="startDraftFromVote()">Make top two captains &amp; start draft</button>`:''}
     </div>`);
+}
+async function toggleVoteFreeze(){
+  State.config.settings.voteFrozen = !State.config.settings.voteFrozen;
+  saveConfig();
+  renderVoteResults();
 }
 function startDraftFromVote(){
   const [a,b]=voteTopN(2);
