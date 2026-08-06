@@ -680,6 +680,15 @@ const team = (id)=> (State.config?.teams||[]).find(t=>t.id===id);
 const course = (id)=> (State.config?.courses||[]).find(c=>c.id===id);
 const avatarOf = (id)=> State.avatars[id] || player(id)?.avatar || '🏌️';
 const hcpOf = (id)=>{ const v = State.hcps[id]!=null ? State.hcps[id] : player(id)?.hcp; return (v==null||v==='')?null:Number(v); };
+const HCP_MIN=-10, HCP_MAX=54;   // real-world handicap range (plus-handicap pros to the USGA/WHS max)
+// validates a raw handicap string; returns {ok, value, msg}
+function validateHcp(raw){
+  if(raw===''||raw==null) return {ok:true, value:null};
+  const n=Number(raw);
+  if(!Number.isFinite(n)) return {ok:false, msg:'That doesn\'t look like a number.'};
+  if(n<HCP_MIN || n>HCP_MAX) return {ok:false, msg:`Handicap index has to be between ${HCP_MIN} and ${HCP_MAX}.`};
+  return {ok:true, value:Math.round(n*10)/10};
+}
 // Handicap Index -> Course Handicap for a given course: Index x Slope/113 + (Rating - Par)
 function courseHandicap(index, c){
   if(index==null || !c || c.slope==null || c.rating==null || c.par==null) return null;
@@ -1220,7 +1229,7 @@ function renderHcpStep(pid){
   }
   showModal(`<div class="modal-h"><h2>Your handicap index</h2><p class="muted" style="margin:4px 0 0">${esc(player(pid).name)} — enter your GHIN Handicap Index (the decimal, e.g. 12.4). The app turns it into a course handicap for each round.</p></div>
     <div class="modal-b">
-      <div class="field"><input id="hcpInput" type="number" step="0.1" inputmode="decimal" placeholder="e.g. 12.4" value="${cur!=null?cur:''}" style="text-align:center;font-size:28px;font-family:'Oswald'"/></div>
+      <div class="field"><input id="hcpInput" type="number" step="0.1" min="-10" max="54" inputmode="decimal" placeholder="e.g. 12.4" value="${cur!=null?cur:''}" style="text-align:center;font-size:28px;font-family:'Oswald'"/></div>
       <button class="btn gold" onclick="confirmIdentity('${pid}',true)">Lock it in</button>
       <button class="btn ghost" style="margin-top:8px" onclick="confirmIdentity('${pid}',false)">Skip for now</button>
       <button class="btn ghost" style="margin-top:8px" onclick="renderAvatarPick('${pid}')">Back</button>
@@ -1233,7 +1242,11 @@ async function confirmIdentity(pid, saveHcp){
   Store.set('avatar:'+pid,{emoji});
   if(saveHcp && !hcpLocked()){
     const raw=$('#hcpInput')?.value;
-    if(raw!==undefined && raw!==''){ const index=Number(raw); State.hcps[pid]=index; Store.set('hcp:'+pid,{index}); }
+    if(raw!==undefined && raw!==''){
+      const v=validateHcp(raw);
+      if(!v.ok){ alert(v.msg); return; }
+      State.hcps[pid]=v.value; Store.set('hcp:'+pid,{index:v.value});
+    }
   }
   Device.set('me',pid); State.me=pid;
   closeModal(); updateMeChip(); render();
@@ -1395,8 +1408,10 @@ function playerBoard(round){
 function viewBoard(){
   const draftLive=getDraft().status==='live';
   const draftBanner=draftLive?`<div class="banner" style="background:rgba(30,95,168,.16);border-color:rgba(30,95,168,.5);color:#1E5FA8;cursor:pointer" onclick="go('roster')">🏈 The draft is live — tap to watch the board</div>`:'';
+  const spectatorNote=!State.me?`<div class="muted" style="text-align:center;font-size:11px;margin:-8px 2px 12px">👀 Just here to watch? You're all set — no sign-in needed to follow along.</div>`:'';
   return `${cupHTML()}
   ${draftBanner}
+  ${spectatorNote}
   <div id="syncStatus" style="margin:0 2px 10px;font-size:11px;color:rgba(237,231,214,.55)">${statusInnerHTML()}</div>
   <div id="boardBody">${boardBodyHTML()}</div>`;
 }
@@ -2483,7 +2498,7 @@ function editPlayer(pid){
     <div class="modal-b">
       <div class="field"><label>Name</label><input id="pName" value="${esc(p.name)}"/></div>
       <div class="two">
-        <div class="field"><label>Handicap index</label><input id="pHcp" type="number" step="0.1" inputmode="decimal" value="${curIdx!=null?curIdx:''}"/></div>
+        <div class="field"><label>Handicap index</label><input id="pHcp" type="number" step="0.1" min="-10" max="54" inputmode="decimal" value="${curIdx!=null?curIdx:''}"/></div>
         <div class="field"><label>Team</label><select id="pTeam">
           <option value="">— none —</option>
           ${State.config.teams.map(t=>`<option value="${t.id}" ${p.teamId===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}
@@ -2500,12 +2515,14 @@ function editPlayer(pid){
 async function savePlayer(pid){
   const name=$('#pName').value.trim(); if(!name) return;
   const raw=$('#pHcp').value;
+  const v=validateHcp(raw);
+  if(!v.ok){ alert(v.msg); return; }
   const rec={ name, teamId:$('#pTeam').value, isCaptain:$('#pCap').checked };
   if(pid){ Object.assign(player(pid),rec); }
   else { rec.id='p'+Date.now().toString(36); rec.avatar=''; State.config.players.push(rec); pid=rec.id; }
   // Handicap index lives in its own blob (shared source of truth for self-serve + admin) — sync in the background
-  if(raw===''){ delete State.hcps[pid]; Store.del('hcp:'+pid); }
-  else { const index=Number(raw); State.hcps[pid]=index; Store.set('hcp:'+pid,{index}); }
+  if(v.value==null){ delete State.hcps[pid]; Store.del('hcp:'+pid); }
+  else { State.hcps[pid]=v.value; Store.set('hcp:'+pid,{index:v.value}); }
   saveConfig(); renderAdmin();
 }
 async function delPlayer(pid){ State.config.players=State.config.players.filter(p=>p.id!==pid); saveConfig(); renderAdmin(); }
