@@ -660,6 +660,7 @@ const State = {
   votes:{},     // voterId -> [candidate playerIds] (from vote:* blobs)
   reactions:{}, // voterId -> { matchKey: emoji } (from react:* blobs)
   titles:{},    // playerId -> superlative text (from title:* blobs)
+  pins:{},      // playerId -> 4-digit PIN, if that player has locked their name (from pin:* blobs)
   cards:{},     // 'card:round:side' -> {holes,enteredBy,updatedAt}
   me:null,      // playerId
   view:'board',
@@ -1114,6 +1115,9 @@ async function loadAll(){
   State.titles={};
   const ti=await Store.list('title:');
   Object.entries(ti).forEach(([k,v])=>{ if(v?.text) State.titles[k.split(':')[1]]=v.text; });
+  State.pins={};
+  const pn=await Store.list('pin:');
+  Object.entries(pn).forEach(([k,v])=>{ if(v?.pin) State.pins[k.split(':')[1]]=v.pin; });
   State.cards=await Store.list('card:');
   State.me=Device.get('me');
   if(!State.activeRound) State.activeRound=(cfg.rounds.find(r=>roundLive(r))||cfg.rounds[0])?.id;
@@ -1137,6 +1141,8 @@ async function refresh(){
     State.reactions={}; Object.entries(rx).forEach(([k,v])=>{ if(v?.map) State.reactions[k.split(':')[1]]=v.map; });
     const ti=await Store.list('title:');
     State.titles={}; Object.entries(ti).forEach(([k,v])=>{ if(v?.text) State.titles[k.split(':')[1]]=v.text; });
+    const pn=await Store.list('pin:');
+    State.pins={}; Object.entries(pn).forEach(([k,v])=>{ if(v?.pin) State.pins[k.split(':')[1]]=v.pin; });
     const freshCards=await Store.list('card:');
     const now=Date.now();
     const merged={...State.cards};
@@ -1197,7 +1203,27 @@ function renderNamePick(){
   showModal(`<div class="modal-h"><h2>Who are you?</h2><p class="muted" style="margin:4px 0 0">Pick your name — this phone will remember you.</p></div>
     <div class="modal-b"><div class="namelist">${rows}</div></div>`);
 }
-function pickName(pid){ renderAvatarPick(pid); }
+function pickName(pid){
+  if(State.pins[pid]){ renderPinCheck(pid); }
+  else { renderAvatarPick(pid); }
+}
+function renderPinCheck(pid){
+  showModal(`<div class="modal-h"><h2>${esc(player(pid).name)} is locked</h2><p class="muted" style="margin:4px 0 0">${esc(player(pid).name.split(' ')[0])} set a PIN so nobody else can sign in as them. Enter it to continue.</p></div>
+    <div class="modal-b">
+      <div class="field"><input id="pinCheckInput" type="password" inputmode="numeric" maxlength="4" placeholder="••••" style="text-align:center;font-size:28px;letter-spacing:.3em;font-family:'Oswald'"/></div>
+      <button class="btn gold" onclick="checkPinAndProceed('${pid}')">Unlock</button>
+      <button class="btn ghost" style="margin-top:8px" onclick="renderNamePick()">Back</button>
+      <p class="muted" style="text-align:center;margin-top:10px;font-size:11px">Not you? Ask ${esc(player(pid).name.split(' ')[0])}, or have the commissioner reset it in Admin.</p>
+    </div>`);
+}
+function checkPinAndProceed(pid){
+  const v=($('#pinCheckInput')?.value||'').trim();
+  if(v===String(State.pins[pid])){ renderAvatarPick(pid); }
+  else {
+    const el=$('#pinCheckInput');
+    if(el){ el.value=''; el.placeholder='Wrong PIN — try again'; el.style.borderColor='var(--red)'; }
+  }
+}
 function renderAvatarPick(pid){
   const taken=new Set(Object.entries(State.avatars).filter(([id])=>id!==pid).map(([,e])=>e));
   const current=avatarOf(pid);
@@ -1249,8 +1275,32 @@ async function confirmIdentity(pid, saveHcp){
     }
   }
   Device.set('me',pid); State.me=pid;
+  if(!State.pins[pid]){ renderPinSetupOffer(pid); return; }   // optional — never asked again once set or explicitly skipped this session
   closeModal(); updateMeChip(); render();
 }
+function renderPinSetupOffer(pid){
+  showModal(`<div class="modal-h"><h2>Lock your name? <span style="font-weight:400;color:var(--text-dim)">(optional)</span></h2><p class="muted" style="margin:4px 0 0">Set a 4-digit PIN so nobody else can sign in as ${esc(player(pid).name.split(' ')[0])} and mess with your scores or votes. Totally optional — plenty of people skip this.</p></div>
+    <div class="modal-b">
+      <div class="field"><input id="pinSetupInput" type="password" inputmode="numeric" maxlength="4" placeholder="Choose a 4-digit PIN"style="text-align:center;font-size:24px;letter-spacing:.2em;font-family:'Oswald'"/></div>
+      <button class="btn gold" onclick="setPinAndFinish('${pid}')">Set PIN</button>
+      <button class="btn ghost" style="margin-top:8px" onclick="finishSignIn()">Skip</button>
+    </div>`);
+}
+const WEAK_PINS = new Set([
+  '0000','1111','2222','3333','4444','5555','6666','7777','8888','9999',
+  '1234','2345','3456','4567','5678','6789','0123',
+  '4321','5432','6543','7654','8765','9876','3210',
+  '1212','2121','1010','2020','6969','1999','2000',
+]);
+async function setPinAndFinish(pid){
+  const v=($('#pinSetupInput')?.value||'').trim();
+  if(!/^\d{4}$/.test(v)){ alert('PIN needs to be exactly 4 digits.'); return; }
+  if(WEAK_PINS.has(v)){ alert(`Nice try, ${player(pid)?.name?.split(' ')[0]||'friend'}. ${v} is not an allowed PIN.`); return; }
+  State.pins[pid]=v;
+  Store.set('pin:'+pid,{pin:v});
+  finishSignIn();
+}
+function finishSignIn(){ closeModal(); updateMeChip(); render(); }
 
 /* ============================================================
    MODALS
@@ -2507,10 +2557,19 @@ function editPlayer(pid){
       <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:4px 0 14px">
         <input id="pCap" type="checkbox" ${p.isCaptain?'checked':''} style="width:20px;height:20px"/> Team captain
       </label>
+      ${pid?`<div class="muted" style="display:flex;align-items:center;justify-content:space-between;margin:-6px 0 14px;padding:9px 11px;background:var(--paper2);border-radius:9px;font-size:12px">
+        <span>${State.pins[pid]?'🔒 Name is locked with a PIN':'🔓 No PIN set'}</span>
+        ${State.pins[pid]?`<button class="btn ghost sm" onclick="resetPin('${pid}')">Reset</button>`:''}
+      </div>`:''}
       <button class="btn gold" onclick="savePlayer('${pid}')">Save</button>
       ${pid?`<button class="btn ghost" style="margin-top:8px;color:var(--red)" onclick="delPlayer('${pid}')">Delete player</button>`:''}
       <button class="btn ghost" style="margin-top:8px" onclick="renderAdmin()">Back</button>
     </div>`);
+}
+async function resetPin(pid){
+  delete State.pins[pid];
+  Store.del('pin:'+pid);
+  editPlayer(pid);
 }
 async function savePlayer(pid){
   const name=$('#pName').value.trim(); if(!name) return;
