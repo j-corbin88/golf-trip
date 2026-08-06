@@ -1274,16 +1274,16 @@ async function confirmIdentity(pid, saveHcp){
       State.hcps[pid]=v.value; Store.set('hcp:'+pid,{index:v.value});
     }
   }
+  if(!State.pins[pid]){ renderPinSetupOffer(pid); return; }   // required — nobody is actually signed in until a PIN is set
   Device.set('me',pid); State.me=pid;
-  if(!State.pins[pid]){ renderPinSetupOffer(pid); return; }   // optional — never asked again once set or explicitly skipped this session
   closeModal(); updateMeChip(); render();
 }
 function renderPinSetupOffer(pid){
-  showModal(`<div class="modal-h"><h2>Lock your name? <span style="font-weight:400;color:var(--text-dim)">(optional)</span></h2><p class="muted" style="margin:4px 0 0">Set a 4-digit PIN so nobody else can sign in as ${esc(player(pid).name.split(' ')[0])} and mess with your scores or votes. Totally optional — plenty of people skip this.</p></div>
+  showModal(`<div class="modal-h"><h2>Set your PIN</h2><p class="muted" style="margin:4px 0 0">Every name needs a 4-digit PIN so nobody else can sign in as ${esc(player(pid).name.split(' ')[0])} and mess with your scores or votes. This is the last step.</p></div>
     <div class="modal-b">
       <div class="field"><input id="pinSetupInput" type="password" inputmode="numeric" maxlength="4" placeholder="Choose a 4-digit PIN"style="text-align:center;font-size:24px;letter-spacing:.2em;font-family:'Oswald'"/></div>
-      <button class="btn gold" onclick="setPinAndFinish('${pid}')">Set PIN</button>
-      <button class="btn ghost" style="margin-top:8px" onclick="finishSignIn()">Skip</button>
+      <button class="btn gold" onclick="setPinAndFinish('${pid}')">Set PIN &amp; finish</button>
+      <p class="muted" style="text-align:center;margin-top:10px;font-size:11px">Forget it later? The commissioner can reset it in Admin.</p>
     </div>`);
 }
 const WEAK_PINS = new Set([
@@ -1298,6 +1298,7 @@ async function setPinAndFinish(pid){
   if(WEAK_PINS.has(v)){ alert(`Nice try, ${player(pid)?.name?.split(' ')[0]||'friend'}. ${v} is not an allowed PIN.`); return; }
   State.pins[pid]=v;
   Store.set('pin:'+pid,{pin:v});
+  Device.set('me',pid); State.me=pid;   // now they're actually signed in
   finishSignIn();
 }
 function finishSignIn(){ closeModal(); updateMeChip(); render(); }
