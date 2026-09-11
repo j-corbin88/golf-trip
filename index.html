@@ -1191,7 +1191,9 @@ async function refresh(){
     });
     for(const [k,t] of recentLocalWrite){ if(now>=t) recentLocalWrite.delete(k); }   // housekeeping
     State.cards=merged;
-    const cfg=await Store.get(State.sandbox?'sandbox-config':'config'); if(cfg){ State.config=cfg; }
+    const cfgKey=State.sandbox?'sandbox-config':'config';
+    const cfgProtected = recentConfigWrite[cfgKey] && Date.now()<recentConfigWrite[cfgKey];
+    if(!cfgProtected){ const cfg=await Store.get(cfgKey); if(cfg){ State.config=cfg; } }
     updateSyncDot(Store.status());
     if(State.view==='board') updateBoard();
     else if(State.view==='enter'){ const {round,seg,key}=curEntryRefs(); updateEntryAfterSave(State.cards[key]||{holes:{},enteredBy:''}); }
@@ -1308,7 +1310,9 @@ async function setSandboxFormat(key){
   const n=Math.min(Math.floor(a.length/per),Math.floor(b.length/per));
   const matches=[]; for(let k=0;k<n;k++){ matches.push({id:newMatchId(), a:a.slice(k*per,k*per+per), b:b.slice(k*per,k*per+per)}); }
   seg.matches=matches;
+  State.entrySeg=null; State.entrySide=null;   // old side ids (e.g. an individual player) may not exist under the new format's shape
   await saveConfig();
+  render(false);          // update the screen behind the modal immediately — don't wait for the modal to close
   renderSandboxSettings();
 }
 async function setSandboxHcp(pid, raw){
@@ -1316,8 +1320,9 @@ async function setSandboxHcp(pid, raw){
   if(!v.ok){ alert(v.msg); renderSandboxSettings(); return; }
   if(v.value==null){ delete State.hcps[pid]; Store.del('hcp:'+pid); }
   else { State.hcps[pid]=v.value; Store.set('hcp:'+pid,{index:v.value}); }
+  render(false);
 }
-async function setSandboxUseHcp(on){ State.config.settings.useHandicaps=on; await saveConfig(); }
+async function setSandboxUseHcp(on){ State.config.settings.useHandicaps=on; await saveConfig(); render(false); }
 function renderNamePick(){
   const rows=(State.config.players||[]).map(p=>{
     const t=team(p.teamId);
@@ -2582,7 +2587,12 @@ async function setSegWeight(rid,segId,v){ const {seg}=findSeg(rid,segId); if(seg
 async function setFrozen(rid,on){ const r=State.config.rounds.find(x=>x.id===rid); if(r) r.frozen=on; await saveConfig(); renderAdmin(); }
 
 /* admin mutations */
-async function saveConfig(){ Store.set(State.sandbox?'sandbox-config':'config',State.config); }   // fire-and-forget: Store already persists locally + queues for retry before its own network call, so the screen never waits on Netlify to re-render
+const recentConfigWrite = {};   // key ('config' or 'sandbox-config') -> timestamp until which local config should win over a poll fetch
+async function saveConfig(){
+  const key=State.sandbox?'sandbox-config':'config';
+  recentConfigWrite[key]=Date.now()+20000;   // protect for 20s — long enough to cover normal sync lag
+  Store.set(key,State.config);
+}
 function setTeamName(id,v){ team(id).name=v; saveConfig(); }
 function setTeamColor(id,v){ team(id).color=v; saveConfig(); render(); }
 async function setRoundField(rid,field,val){ State.config.rounds.find(r=>r.id===rid)[field]=val; await saveConfig(); renderAdmin(); }
