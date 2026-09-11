@@ -270,6 +270,11 @@ input,select{font-family:inherit;font-size:16px}
   <button onclick="clearDemo()" style="background:#fff;color:#7a3ea8;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px">Exit demo</button>
 </div>
 
+<div id="sandboxBar" class="hidden" style="position:fixed;left:0;right:0;bottom:calc(72px + env(safe-area-inset-bottom));z-index:40;max-width:640px;margin:0 auto;background:#0d6e4f;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;font-size:13px;font-weight:600;box-shadow:0 -4px 14px rgba(0,0,0,.2)">
+  <span>🧪 Sandbox — separate space, real sync, nothing here counts</span>
+  <button onclick="exitSandbox()" style="background:#fff;color:#0d6e4f;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px">Exit</button>
+</div>
+
 <nav class="nav" id="nav"></nav>
 
 <div id="modalHost"></div>
@@ -379,6 +384,10 @@ const Store = (() => {
 const Device = {
   get(k){ try{ const v=localStorage.getItem('mbg-dev:'+k); return v==null?null:JSON.parse(v);}catch(e){ return null; } },
   set(k,v){ try{ localStorage.setItem('mbg-dev:'+k, JSON.stringify(v)); }catch(e){} },
+};
+const SandboxDevice = {   // separate key so sandbox sign-in never touches the real signed-in identity
+  get(k){ try{ const v=localStorage.getItem('mbg-sandbox:'+k); return v==null?null:JSON.parse(v);}catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem('mbg-sandbox:'+k, JSON.stringify(v)); }catch(e){} },
 };
 
 /* ---------- Formats ---------- */
@@ -597,6 +606,29 @@ const DEFAULT_CONFIG = () => ({
   ],
 });
 
+function DEFAULT_SANDBOX_CONFIG(){
+  return {
+    settings:{ tripName:'Sandbox', tripSub:'A clean space to test live scoring — none of this counts', adminPin:'0605', holeCount:18,
+      scrambleHcp:'low', useHandicaps:false, hcpLocked:false, voteFrozen:false,
+      allowance:{singles:100, betterball:85, shramble:100, scramble:100} },
+    teams:[ {id:'sg',name:'Sandbox Gold',color:'#E5A823'}, {id:'sb',name:'Sandbox Blue',color:'#1E5FA8'} ],
+    players:[
+      {id:'st1',name:'Tester 1',hcp:null,teamId:'sg',isCaptain:false,avatar:''},
+      {id:'st2',name:'Tester 2',hcp:null,teamId:'sb',isCaptain:false,avatar:''},
+      {id:'st3',name:'Tester 3',hcp:null,teamId:'sg',isCaptain:false,avatar:''},
+      {id:'st4',name:'Tester 4',hcp:null,teamId:'sb',isCaptain:false,avatar:''},
+    ],
+    courses:[
+      {id:'sc1', name:'Sandbox Golf Club', address:'', par:72, tee:'White', tees:[{name:'White',rating:70.0,slope:113}], rating:70.0, slope:113,
+       pars:[4,4,3,5,4,4,3,5,4,4,4,3,5,4,4,3,5,4], si:[7,3,17,1,9,5,15,11,13,8,4,18,2,10,6,16,12,14]},
+    ],
+    rounds:[
+      {id:'srd', dateLabel:'Testing', name:'Sandbox Round', courseId:'sc1', split:false,
+       segments:[{id:'f', label:'All 18', start:1, end:18, format:'singles', matches:[{id:'sm1', a:['st1'], b:['st2']}], weight:1}]},
+    ],
+  };
+}
+
 function reconcileTrip(){
   // Heal a config that was seeded by an earlier version: backfill courses,
   // round→course links, tee times and roster WITHOUT touching user edits
@@ -670,6 +702,9 @@ const State = {
   entrySide:null,
   entryHole:1,
   adminAuthed:false,
+  sandbox:false,       // true while the sandbox (fully separate test space) is swapped in
+  realConfig:null,     // stashed real config while sandbox is active
+  realMe:null, realActiveRound:null, realView:null, realEntrySeg:null, realEntrySide:null,
 };
 
 /* ---------- Helpers ---------- */
@@ -1156,7 +1191,7 @@ async function refresh(){
     });
     for(const [k,t] of recentLocalWrite){ if(now>=t) recentLocalWrite.delete(k); }   // housekeeping
     State.cards=merged;
-    const cfg=await Store.get('config'); if(cfg){ State.config=cfg; }
+    const cfg=await Store.get(State.sandbox?'sandbox-config':'config'); if(cfg){ State.config=cfg; }
     updateSyncDot(Store.status());
     if(State.view==='board') updateBoard();
     else if(State.view==='enter'){ const {round,seg,key}=curEntryRefs(); updateEntryAfterSave(State.cards[key]||{holes:{},enteredBy:''}); }
@@ -1181,6 +1216,7 @@ function updateMeChip(){
   else { av.textContent='＋'; nm.textContent='Sign in'; }
 }
 function openIdentity(){
+  if(State.sandbox){ renderSandboxNamePick(); return; }
   const players=State.config.players||[];
   if(!players.length){
     showModal(`<div class="modal-h"><h2>No roster yet</h2></div>
@@ -1189,6 +1225,56 @@ function openIdentity(){
     return;
   }
   renderNamePick();
+}
+function renderSandboxNamePick(){
+  const rows=(State.config.players||[]).map(p=>{
+    const t=team(p.teamId);
+    return `<button onclick="pickSandboxName('${p.id}')">
+      <span class="teamdot" style="background:${t?.color||'#999'}"></span>
+      <span class="av" style="width:26px;height:26px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:15px">🧪</span>
+      <span style="flex:1">${esc(p.name)}</span>
+    </button>`;
+  }).join('');
+  showModal(`<div class="modal-h"><h2>Which tester are you?</h2><p class="muted" style="margin:4px 0 0">Pick any name — sandbox identities are throwaway, no PIN needed. Get a friend to pick a different one on their own phone.</p></div>
+    <div class="modal-b"><div class="namelist">${rows}</div></div>`);
+}
+function pickSandboxName(pid){
+  SandboxDevice.set('me',pid);
+  State.me=pid;
+  closeModal(); updateMeChip(); render();
+}
+async function enterSandbox(){
+  if(State.sandbox) return;
+  State.realConfig=State.config; State.realMe=State.me; State.realActiveRound=State.activeRound;
+  State.realView=State.view; State.realEntrySeg=State.entrySeg; State.realEntrySide=State.entrySide;
+  let sc=await Store.get('sandbox-config');
+  if(!sc){ sc=DEFAULT_SANDBOX_CONFIG(); await Store.set('sandbox-config',sc); }
+  State.config=sc;
+  State.sandbox=true;
+  State.me=SandboxDevice.get('me');
+  State.activeRound=sc.rounds[0].id;
+  State.entrySeg=null; State.entrySide=null;
+  State.view='board';
+  document.getElementById('sandboxBar')?.classList.remove('hidden');
+  document.getElementById('tripTitle').textContent='🧪 Sandbox';
+  document.getElementById('tripSub').textContent='Separate test space';
+  closeModal();
+  render(true);
+}
+function exitSandbox(){
+  if(!State.sandbox) return;
+  State.config=State.realConfig; State.me=State.realMe; State.activeRound=State.realActiveRound;
+  State.view=State.realView||'board'; State.entrySeg=State.realEntrySeg; State.entrySide=State.realEntrySide;
+  State.realConfig=null; State.sandbox=false;
+  document.getElementById('sandboxBar')?.classList.add('hidden');
+  document.getElementById('tripTitle').textContent=State.config.settings.tripName||'The Cup';
+  document.getElementById('tripSub').textContent=State.config.settings.tripSub||'';
+  render(true);
+}
+async function resetSandboxScores(){
+  const keys=Object.keys(State.cards).filter(k=>k.startsWith('card:srd:'));
+  for(const k of keys){ Store.del(k); delete State.cards[k]; }
+  render(true);
 }
 function renderNamePick(){
   const rows=(State.config.players||[]).map(p=>{
@@ -1912,6 +1998,15 @@ function viewRoster(){
    VIEW: MORE (records + admin entry)
    ============================================================ */
 function viewMore(){
+  if(State.sandbox){
+    return `<div class="card">
+      <div class="eyebrow">🧪 Sandbox Mode</div>
+      <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:6px">Testing live scoring</h3>
+      <p class="muted">A completely separate space — its own fake players and teams, but the real save-and-sync path. Nothing here touches your actual trip. Send a friend the same link and have them pick a different Tester on their own phone.</p>
+      <button class="btn ghost sm" style="width:100%;margin-top:14px" onclick="resetSandboxScores()">Clear sandbox scores</button>
+      <button class="btn gold" style="width:100%;margin-top:8px" onclick="exitSandbox()">Exit sandbox — back to the real trip</button>
+    </div>`;
+  }
   const s=State.config.settings||{};
   return `
   <div class="card">
@@ -1926,6 +2021,12 @@ function viewMore(){
     <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:4px">Admin</h3>
     <p class="muted" style="margin-bottom:12px">Set the roster, teams, captains, handicaps, and drop a format onto each day.</p>
     <button class="btn" onclick="openAdmin()">Open admin control room</button>
+  </div>
+  <div class="card">
+    <div class="eyebrow">🧪 Sandbox</div>
+    <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:4px">Test live scoring</h3>
+    <p class="muted" style="margin-bottom:12px">A completely separate space with its own fake players — not the real roster or real rounds. Good for stress-testing sync with a friend without any risk to your actual trip.</p>
+    <button class="btn ghost" onclick="enterSandbox()">Enter sandbox</button>
   </div>
   <div class="muted" style="text-align:center;font-size:11px">The Cup · Myrtle Beach 2026 · built for the Blakefield ’06 crew</div>
   `;
@@ -2418,35 +2519,14 @@ function renderAdmin(){
       <div class="eyebrow">Preview</div>
       <button class="btn ghost sm" style="width:100%" onclick="loadDemo()">👁️ Load demo data (this phone only)</button>
       <div class="muted" style="font-size:11px;margin-top:6px">Fills every screen with realistic fake scores so you can see how it'll look mid-trip. It stays on your phone, never syncs to anyone, and isn't saved — tap "Exit demo" to clear it.</div>
-
-      <div class="divider"></div>
-      <div class="eyebrow">🧪 Test Round</div>
-      ${cfg.rounds.some(r=>r.test)
-        ? `<div class="muted" style="margin-bottom:8px">A test round is live — it shows up in Enter Score and Rounds like any other day, but it's completely walled off from your real standings and points.</div>
-           <button class="btn ghost sm" style="width:100%;color:var(--red);border-color:var(--red)" onclick="removeTestRound()">Remove test round &amp; its scores</button>`
-        : `<button class="btn ghost sm" style="width:100%" onclick="addTestRound()">Add a test round</button>
-           <div class="muted" style="font-size:11px;margin-top:6px">Demo mode never touches the network, so it can't test real sync. This adds a real, live round — anyone can open the app on their own phone and enter real scores through the real sync path (weak signal, backgrounding, all of it) with zero risk to the actual tournament. Delete it before the trip.</div>`}
+      <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="enterSandbox()">🧪 Enter sandbox — test live scoring</button>
+      <div class="muted" style="font-size:11px;margin-top:6px">A fully separate space with its own fake players — real sync, zero risk to your actual trip. Also reachable from More.</div>
 
       <div class="divider"></div>
       <div class="eyebrow">Danger zone</div>
       <button class="btn ghost sm" onclick="resetScores()" style="color:var(--red);border-color:var(--red)">Clear all scores</button>
     </div>
   `);
-}
-async function addTestRound(){
-  const cid=(State.config.courses||[])[0]?.id;
-  State.config.rounds.push({
-    id:'rtest', test:true, name:'🧪 Test Round (practice)', dateLabel:'Practice', courseId:cid, split:false,
-    segments:[{id:'f', label:'All 18', start:1, end:18, format:'singles', matches:[], weight:1}]
-  });
-  await saveConfig(); renderAdmin();
-}
-async function removeTestRound(){
-  const keys=Object.keys(State.cards).filter(k=>k.startsWith('card:rtest:'));
-  for(const k of keys){ Store.del(k); delete State.cards[k]; }
-  State.config.rounds=State.config.rounds.filter(r=>!r.test);
-  if(State.activeRound==='rtest') State.activeRound=null;
-  await saveConfig(); renderAdmin();
 }
 async function setScrambleHcp(v){ State.config.settings.scrambleHcp=v; await saveConfig(); renderAdmin(); }
 async function setUseHandicaps(on){ State.config.settings.useHandicaps=on; await saveConfig(); renderAdmin(); }
@@ -2457,7 +2537,7 @@ async function setSegWeight(rid,segId,v){ const {seg}=findSeg(rid,segId); if(seg
 async function setFrozen(rid,on){ const r=State.config.rounds.find(x=>x.id===rid); if(r) r.frozen=on; await saveConfig(); renderAdmin(); }
 
 /* admin mutations */
-async function saveConfig(){ Store.set('config',State.config); }   // fire-and-forget: Store already persists locally + queues for retry before its own network call, so the screen never waits on Netlify to re-render
+async function saveConfig(){ Store.set(State.sandbox?'sandbox-config':'config',State.config); }   // fire-and-forget: Store already persists locally + queues for retry before its own network call, so the screen never waits on Netlify to re-render
 function setTeamName(id,v){ team(id).name=v; saveConfig(); }
 function setTeamColor(id,v){ team(id).color=v; saveConfig(); render(); }
 async function setRoundField(rid,field,val){ State.config.rounds.find(r=>r.id===rid)[field]=val; await saveConfig(); renderAdmin(); }
@@ -2669,6 +2749,7 @@ async function clearDemo(){
   updateSyncDot();
   Store.flush();          // push anything left queued from a previous session
   startPoll();
+  if(State.me && player(State.me) && !State.pins[State.me]){ renderPinSetupOffer(State.me); }   // already signed in from before PINs existed — lock it now
 })();
 </script>
 </body>
