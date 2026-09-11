@@ -1276,6 +1276,48 @@ async function resetSandboxScores(){
   for(const k of keys){ Store.del(k); delete State.cards[k]; }
   render(true);
 }
+function renderSandboxSettings(){
+  const round=State.config.rounds[0], seg=round.segments[0];
+  const fmtBtns=Object.entries(FORMATS).map(([key,f])=>
+    `<button class="btn ${seg.format===key?'gold':'ghost'} sm" style="margin:0 6px 6px 0" onclick="setSandboxFormat('${key}')">${esc(f.label)}</button>`
+  ).join('');
+  const hcpRows=(State.config.players||[]).map(p=>
+    `<div class="field" style="margin-bottom:8px">
+      <label>${esc(p.name)}</label>
+      <input type="number" step="0.1" min="${HCP_MIN}" max="${HCP_MAX}" inputmode="decimal" value="${State.hcps[p.id]??''}" placeholder="e.g. 12.4" onchange="setSandboxHcp('${p.id}',this.value)"/>
+    </div>`).join('');
+  showModal(`<div class="modal-h"><h2>🧪 Sandbox Settings</h2><p class="muted" style="margin:4px 0 0">Quick controls just for this test — none of it touches your real trip.</p></div>
+    <div class="modal-b">
+      <div class="eyebrow">Match type</div>
+      <div style="margin-bottom:6px">${fmtBtns}</div>
+      <div class="muted" style="font-size:11px;margin-bottom:14px">Switching re-pairs the testers automatically for the new format.</div>
+      <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:16px">
+        <input type="checkbox" ${State.config.settings.useHandicaps?'checked':''} onchange="setSandboxUseHcp(this.checked)" style="width:20px;height:20px"/> Use handicaps (net play)
+      </label>
+      <div class="eyebrow">Tester handicaps</div>
+      ${hcpRows}
+      <button class="btn ghost" style="margin-top:6px" onclick="closeModal();render()">Done</button>
+    </div>`);
+}
+async function setSandboxFormat(key){
+  const round=State.config.rounds[0], seg=round.segments[0];
+  seg.format=key;
+  const per=perSideFor(key);
+  const a=teamRoster(State.config.teams[0].id).map(p=>p.id);
+  const b=teamRoster(State.config.teams[1].id).map(p=>p.id);
+  const n=Math.min(Math.floor(a.length/per),Math.floor(b.length/per));
+  const matches=[]; for(let k=0;k<n;k++){ matches.push({id:newMatchId(), a:a.slice(k*per,k*per+per), b:b.slice(k*per,k*per+per)}); }
+  seg.matches=matches;
+  await saveConfig();
+  renderSandboxSettings();
+}
+async function setSandboxHcp(pid, raw){
+  const v=validateHcp(raw);
+  if(!v.ok){ alert(v.msg); renderSandboxSettings(); return; }
+  if(v.value==null){ delete State.hcps[pid]; Store.del('hcp:'+pid); }
+  else { State.hcps[pid]=v.value; Store.set('hcp:'+pid,{index:v.value}); }
+}
+async function setSandboxUseHcp(on){ State.config.settings.useHandicaps=on; await saveConfig(); }
 function renderNamePick(){
   const rows=(State.config.players||[]).map(p=>{
     const t=team(p.teamId);
@@ -1999,11 +2041,14 @@ function viewRoster(){
    ============================================================ */
 function viewMore(){
   if(State.sandbox){
+    const seg=State.config.rounds[0]?.segments?.[0];
     return `<div class="card">
       <div class="eyebrow">🧪 Sandbox Mode</div>
       <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:6px">Testing live scoring</h3>
       <p class="muted">A completely separate space — its own fake players and teams, but the real save-and-sync path. Nothing here touches your actual trip. Send a friend the same link and have them pick a different Tester on their own phone.</p>
-      <button class="btn ghost sm" style="width:100%;margin-top:14px" onclick="resetSandboxScores()">Clear sandbox scores</button>
+      <div class="muted" style="margin-top:10px">Currently testing: <b style="color:var(--text)">${esc(FORMATS[seg?.format]?.label||'—')}</b></div>
+      <button class="btn ghost sm" style="width:100%;margin-top:12px" onclick="renderSandboxSettings()">⚙️ Match type &amp; handicaps</button>
+      <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="resetSandboxScores()">Clear sandbox scores</button>
       <button class="btn gold" style="width:100%;margin-top:8px" onclick="exitSandbox()">Exit sandbox — back to the real trip</button>
     </div>`;
   }
