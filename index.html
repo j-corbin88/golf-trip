@@ -745,6 +745,22 @@ const team = (id)=> (State.config?.teams||[]).find(t=>t.id===id);
 const course = (id)=> (State.config?.courses||[]).find(c=>c.id===id);
 const avatarOf = (id)=> State.avatars[id] || player(id)?.avatar || '🏌️';
 const hcpOf = (id)=>{ const v = State.hcps[id]!=null ? State.hcps[id] : player(id)?.hcp; return (v==null||v==='')?null:Number(v); };
+// lowest set handicap index across the whole roster — the field's scratch reference
+function fieldLowHcp(){
+  const vals=(State.config.players||[]).map(p=>hcpOf(p.id)).filter(v=>v!=null);
+  return vals.length ? Math.min(...vals) : null;
+}
+// whole-number strokes this player gets relative to the field's low handicap ("low man plays scratch")
+function netVsLow(id){
+  const idx=hcpOf(id), low=fieldLowHcp();
+  if(idx==null || low==null) return null;
+  return Math.round(idx-low);
+}
+function netVsLowLabel(id){
+  const n=netVsLow(id);
+  if(n==null) return '';
+  return n<=0 ? 'LOW' : `+${n}`;
+}
 const HCP_MIN=-10, HCP_MAX=54;   // real-world handicap range (plus-handicap pros to the USGA/WHS max)
 // validates a raw handicap string; returns {ok, value, msg}
 function validateHcp(raw){
@@ -2047,7 +2063,7 @@ function viewRoster(){
       return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}>
         <div class="av">${avatarOf(p.id)}</div>
         <div class="info"><b>${esc(p.name)}</b>${sub}</div>
-        <div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div>
+        <div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span>${netVsLowLabel(p.id)?`<span style="display:block;color:var(--gold);font-weight:700;font-size:11px;margin-top:2px">${netVsLowLabel(p.id)}</span>`:''}</div>
       </div>`;
     }).join('') || '<div class="muted">No players assigned</div>';
     return `<div class="card">
@@ -2061,7 +2077,7 @@ function viewRoster(){
   const un=unassigned.length?`<div class="card"><div class="eyebrow">${teams.some(t=>players.some(p=>p.teamId===t.id))?'Not on a team':'The Field · by handicap'}</div>${unassigned.map(p=>{
     const ti=titleOf(p.id), canEdit=(State.adminAuthed||p.id===State.me);
     const sub=(ti||canEdit)?`<span>${esc(ti)}${ti&&canEdit?' ':''}${canEdit?`<b style="opacity:.5;font-weight:400">✏️${ti?'':' add title'}</b>`:''}</span>`:'';
-    return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b>${sub}</div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span></div></div>`;
+    return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b>${sub}</div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span>${netVsLowLabel(p.id)?`<span style="display:block;color:var(--gold);font-weight:700;font-size:11px;margin-top:2px">${netVsLowLabel(p.id)}</span>`:''}</div></div>`;
   }).join('')}</div>`:'';
   const mv=myVotes();
   const mvNames=mv.map(id=>displayName(id)).filter(Boolean).join(' & ');
@@ -2083,7 +2099,9 @@ function viewRoster(){
       ? mySizesLine(State.me)
       : `<p class="muted" style="margin-bottom:10px">Everyone needs to set theirs so the order comes out right.</p><button class="btn gold" onclick="openIdentity()">Sign in to set my sizes</button>`}
   </div>`;
-  return `${voteCard}${sizesCard}<div class="eyebrow">The Field · ${players.length} players</div>${blocks}${un}`;
+  const lowP=(players||[]).filter(p=>hcpOf(p.id)!=null).sort((a,b)=>hcpOf(a.id)-hcpOf(b.id))[0];
+  const lowNote=lowP?`<div class="muted" style="font-size:11px;margin:-4px 2px 12px">Gold number = strokes given vs. ${esc(lowP.name.split(' ')[0])}'s ${hcpOf(lowP.id)} — the field's low handicap.</div>`:'';
+  return `${voteCard}${sizesCard}<div class="eyebrow">The Field · ${players.length} players</div>${lowNote}${blocks}${un}`;
 }
 function mySizesLine(pid){
   const sz=State.sizes[pid]||{};
