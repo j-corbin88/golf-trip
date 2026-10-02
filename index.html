@@ -598,6 +598,7 @@ const HANDICAP_PLAN = {
 const DEFAULT_CONFIG = () => ({
   settings:{
     tripName:'The Cup', tripSub:'True Blue Resort · Oct 22–25', adminPin:'0605', holeCount:18,
+    tripStart:'2026-10-22T13:06:00-04:00',
     resort:'The Villas at True Blue · Pawleys Island, SC',
     checkIn:'Check in at Litchfield Beach & Golf Resort · 14276 Ocean Highway, Pawleys Island, SC 29585',
     bookingRef:'US58057',
@@ -665,7 +666,7 @@ function reconcileTrip(){
   const cfg=State.config;
   let changed=false;
   cfg.settings=cfg.settings||{};
-  ['resort','checkIn','bookingRef','tripSub','tripName','scrambleHcp'].forEach(k=>{
+  ['resort','checkIn','bookingRef','tripSub','tripName','scrambleHcp','tripStart'].forEach(k=>{
     if(!cfg.settings[k] && def.settings[k]){ cfg.settings[k]=def.settings[k]; changed=true; }
   });
   if(!/villas/i.test(cfg.settings.resort||'')){ cfg.settings.resort=def.settings.resort; changed=true; }
@@ -1656,11 +1657,25 @@ function playerBoard(round){
   return `<div class="card"><div class="eyebrow" style="color:var(--gold)">${esc(round.name)} · Individual ${useHcp()?'net':'gross'}</div>${body}
     <div class="muted" style="margin-top:10px;font-size:11px">${useHcp()?'Net shown big, gross in the line below':'Gross shown'} · score-to-par at right · lowest wins.</div></div>`;
 }
+// Pre-trip countdown — shown above the leaderboard until kickoff, then gone for good
+// (once settings.tripStart is in the past this always returns '', no dismiss state needed).
+function tripCountdownHTML(){
+  const ts=State.config?.settings?.tripStart;
+  if(!ts) return '';
+  const diff=new Date(ts).getTime()-Date.now();
+  if(!(diff>0)) return '';
+  const days=Math.ceil(diff/86400000);
+  return `<div class="banner" style="text-align:center;font-size:13px">
+    <div style="font-family:'Oswald';font-weight:700;font-size:22px;letter-spacing:.02em;line-height:1.1">${days} Day${days===1?'':'s'} To Go</div>
+    <div style="margin-top:2px">${esc(State.config.settings.tripSub||'')}</div>
+  </div>`;
+}
 function viewBoard(){
   const draftLive=getDraft().status==='live';
   const draftBanner=draftLive?`<div class="banner" style="background:rgba(30,95,168,.16);border-color:rgba(30,95,168,.5);color:#1E5FA8;cursor:pointer" onclick="go('roster')">🏈 The draft is live — tap to watch the board</div>`:'';
   const spectatorNote=!State.me?`<div class="muted" style="text-align:center;font-size:11px;margin:-8px 2px 12px">👀 Just here to watch? You're all set — no sign-in needed to follow along.</div>`:'';
-  return `${cupHTML()}
+  return `${tripCountdownHTML()}
+  ${cupHTML()}
   ${draftBanner}
   ${spectatorNote}
   <div id="syncStatus" style="margin:0 2px 10px;font-size:11px;color:rgba(237,231,214,.55)">${statusInnerHTML()}</div>
