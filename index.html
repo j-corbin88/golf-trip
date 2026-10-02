@@ -2145,13 +2145,23 @@ async function saveSizes(pid){
 }
 function renderSizesAdmin(){
   const players=State.config.players||[];
+  const teams=State.config.teams||[];
   const garments=[['tshirt','T-shirt'],['polo','Polo'],['quarterzip','Quarter-zip']];
-  const rollup=garments.map(([key,label])=>{
+  const sizeCounts=(list,key)=>{
     const counts={};
     let set=0;
-    players.forEach(p=>{ const v=State.sizes[p.id]?.[key]; if(v){ counts[v]=(counts[v]||0)+1; set++; } });
+    list.forEach(p=>{ const v=State.sizes[p.id]?.[key]; if(v){ counts[v]=(counts[v]||0)+1; set++; } });
     const parts=APPAREL_SIZES.filter(s=>counts[s]).map(s=>`${s}×${counts[s]}`).join(', ')||'none yet';
-    return `<div style="margin-bottom:6px"><b>${label}:</b> ${esc(parts)} <span class="muted">(${set} of ${players.length} set)</span></div>`;
+    return {parts,set};
+  };
+  const rollup=garments.map(([key,label])=>{
+    const all=sizeCounts(players,key);
+    const byTeam=teams.map(t=>{
+      const roster=teamRoster(t.id);
+      const {parts,set}=sizeCounts(roster,key);
+      return `<div style="margin:3px 0 3px 14px;font-size:12.5px"><span style="color:${esc(t.color||'inherit')}">●</span> ${esc(t.name)}: ${esc(parts)} <span class="muted">(${set} of ${roster.length} set)</span></div>`;
+    }).join('');
+    return `<div style="margin-bottom:10px"><b>${label} — total:</b> ${esc(all.parts)} <span class="muted">(${all.set} of ${players.length} set)</span>${byTeam}</div>`;
   }).join('');
   const rows=players.map(p=>{
     const sz=State.sizes[p.id]||{};
