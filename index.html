@@ -77,6 +77,16 @@ input,select{font-family:inherit;font-size:16px}
 .meter .mid{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;background:rgba(255,255,255,.6);transform:translateX(-1px)}
 .cup-foot{text-align:center;font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-top:11px;color:rgba(237,231,214,.6)}
 
+/* ---- Live pre-trip countdown ---- */
+.countdown{background:var(--ink2);border-radius:16px;padding:14px 10px 12px;color:var(--light);box-shadow:var(--shadow);margin-bottom:16px;text-align:center}
+.countdown .cd-eyebrow{font-family:'Oswald';text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:var(--gold);font-weight:600;margin-bottom:10px}
+.countdown .cd-row{display:flex;align-items:center;justify-content:center;gap:2px}
+.countdown .cd-seg{min-width:54px;text-align:center}
+.countdown .cd-seg b{display:block;font-family:'Oswald';font-weight:700;font-size:30px;line-height:1;color:var(--light);font-variant-numeric:tabular-nums}
+.countdown .cd-seg span{display:block;font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:rgba(237,231,214,.6);margin-top:3px}
+.countdown .cd-colon{font-family:'Oswald';font-weight:700;font-size:24px;color:rgba(237,231,214,.3);padding-bottom:14px}
+.countdown .cd-sub{margin-top:10px;font-size:12px;color:rgba(237,231,214,.72)}
+
 /* ---- Leaderboard rows ---- */
 .lb-round-tab{display:flex;gap:6px;margin-bottom:14px;overflow-x:auto;padding-bottom:2px}
 .lb-round-tab button{white-space:nowrap;background:rgba(255,255,255,.06);color:var(--light);border:1px solid rgba(255,255,255,.1);padding:8px 13px;border-radius:999px;font-size:12px;font-weight:600}
@@ -1544,6 +1554,7 @@ function render(animate=false){
   const map={board:viewBoard,enter:viewEnter,rounds:viewRounds,roster:viewRoster,more:viewMore};
   s.innerHTML=`<div class="view${animate?' anim':''}">${(map[State.view]||viewBoard)()}</div>`;
   if(State.view==='enter') wireEntry();
+  startCountdownTimer();
   if(!animate){ window.scrollTo(0,y); requestAnimationFrame(()=>window.scrollTo(0,y)); }
 }
 
@@ -1657,18 +1668,46 @@ function playerBoard(round){
   return `<div class="card"><div class="eyebrow" style="color:var(--gold)">${esc(round.name)} · Individual ${useHcp()?'net':'gross'}</div>${body}
     <div class="muted" style="margin-top:10px;font-size:11px">${useHcp()?'Net shown big, gross in the line below':'Gross shown'} · score-to-par at right · lowest wins.</div></div>`;
 }
-// Pre-trip countdown — shown above the leaderboard until kickoff, then gone for good
-// (once settings.tripStart is in the past this always returns '', no dismiss state needed).
-function tripCountdownHTML(){
+// Pre-trip countdown — shown above the leaderboard until kickoff, then gone for good.
+// Renders once; tickCountdown() then updates the digits in place every second
+// (started/stopped by render() below) so it's genuinely live, not just a render-time snapshot.
+function countdownParts(){
   const ts=State.config?.settings?.tripStart;
-  if(!ts) return '';
+  if(!ts) return null;
   const diff=new Date(ts).getTime()-Date.now();
-  if(!(diff>0)) return '';
-  const days=Math.ceil(diff/86400000);
-  return `<div class="banner" style="text-align:center;font-size:13px">
-    <div style="font-family:'Oswald';font-weight:700;font-size:22px;letter-spacing:.02em;line-height:1.1">${days} Day${days===1?'':'s'} To Go</div>
-    <div style="margin-top:2px">${esc(State.config.settings.tripSub||'')}</div>
+  if(!(diff>0)) return null;
+  return {
+    d:Math.floor(diff/86400000),
+    h:Math.floor(diff%86400000/3600000),
+    m:Math.floor(diff%3600000/60000),
+    s:Math.floor(diff%60000/1000),
+  };
+}
+function tripCountdownHTML(){
+  const p=countdownParts();
+  if(!p) return '';
+  const seg=(id,val,label)=>`<div class="cd-seg"><b id="${id}">${String(val).padStart(2,'0')}</b><span>${label}</span></div>`;
+  const colon=`<div class="cd-colon">:</div>`;
+  return `<div class="countdown" id="countdownCard">
+    <div class="cd-eyebrow">⛳ Kickoff In</div>
+    <div class="cd-row">${seg('cdD',p.d,'Days')}${colon}${seg('cdH',p.h,'Hrs')}${colon}${seg('cdM',p.m,'Min')}${colon}${seg('cdS',p.s,'Sec')}</div>
+    <div class="cd-sub">${esc(State.config.settings.tripSub||'')}</div>
   </div>`;
+}
+let _cdTimer=null;
+function stopCountdownTimer(){ if(_cdTimer){ clearInterval(_cdTimer); _cdTimer=null; } }
+function tickCountdown(){
+  const el=document.getElementById('countdownCard');
+  if(!el){ stopCountdownTimer(); return; }
+  const p=countdownParts();
+  if(!p){ el.remove(); stopCountdownTimer(); return; } // kickoff reached — disappears live, no reload needed
+  const set=(id,v)=>{ const n=document.getElementById(id); if(n) n.textContent=String(v).padStart(2,'0'); };
+  set('cdD',p.d); set('cdH',p.h); set('cdM',p.m); set('cdS',p.s);
+}
+function startCountdownTimer(){
+  stopCountdownTimer();
+  if(!document.getElementById('countdownCard')) return;
+  _cdTimer=setInterval(tickCountdown,1000);
 }
 function viewBoard(){
   const draftLive=getDraft().status==='live';
