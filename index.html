@@ -811,7 +811,17 @@ function strokesOnHole(ch, si){
    cell (0/1/2/3). Match play, team total, the player board, and the entry dots
    all read this one function, so nothing can disagree. */
 function segForHole(round, hole){
-  return segsOf(round).find(s => s.format && hole>=s.start && hole<=s.end) || null;
+  // agg segments (e.g. a Nassau "Total") are derived views, not real entry segments —
+  // skip them so stroke allocation always resolves to the segment the score was entered in.
+  return segsOf(round).find(s => s.format && !s.agg && hole>=s.start && hole<=s.end) || null;
+}
+// which segment id actually holds the card data for this hole — for a real segment that's
+// just itself; for an agg (derived) segment like a Nassau "Total", it's whichever real
+// front/back segment covers that hole, since Total has no scorecard of its own.
+function segIdForHole(round, seg, hole){
+  if(!seg?.agg) return seg.id;
+  const real=segForHole(round, hole);
+  return real ? real.id : seg.id;
 }
 function autoStrokes(pid, round, hole){
   if(!useHcp()) return 0;
@@ -944,13 +954,13 @@ function matchValFns(round, seg, match){
   if(isGroup){
     const aCH=sideCH(match.a,c,fmt), bCH=sideCH(match.b,c,fmt), low=Math.min(aCH,bCH);
     const aStk=aCH-low, bStk=bCH-low;
-    const aCard=State.cards[cardKey(round.id,seg.id,match.id+':a')];
-    const bCard=State.cards[cardKey(round.id,seg.id,match.id+':b')];
-    aVal=(h)=> aCard?.holes?.[h]!=null ? aCard.holes[h]-strokesOnHole(aStk,si[h-1]) : null;
-    bVal=(h)=> bCard?.holes?.[h]!=null ? bCard.holes[h]-strokesOnHole(bStk,si[h-1]) : null;
+    // card lookup is per-hole (not hoisted) so an agg segment (e.g. Nassau "Total") can pull
+    // each hole from whichever real segment (front/back) actually holds that card.
+    aVal=(h)=>{ const rid=segIdForHole(round,seg,h); const card=State.cards[cardKey(round.id,rid,match.id+':a')]; return card?.holes?.[h]!=null ? card.holes[h]-strokesOnHole(aStk,si[h-1]) : null; };
+    bVal=(h)=>{ const rid=segIdForHole(round,seg,h); const card=State.cards[cardKey(round.id,rid,match.id+':b')]; return card?.holes?.[h]!=null ? card.holes[h]-strokesOnHole(bStk,si[h-1]) : null; };
   } else {
     // Individual formats: each player plays their own strokes from the sheet; low net wins the hole
-    const bestNet=(ids,h)=>{ let best=null; ids.forEach(id=>{ const g=State.cards[cardKey(round.id,seg.id,id)]?.holes?.[h]; if(g!=null){ const nt=g-strokeSheet(id,round,h); if(best==null||nt<best) best=nt; } }); return best; };
+    const bestNet=(ids,h)=>{ let best=null; const rid=segIdForHole(round,seg,h); ids.forEach(id=>{ const g=State.cards[cardKey(round.id,rid,id)]?.holes?.[h]; if(g!=null){ const nt=g-strokeSheet(id,round,h); if(best==null||nt<best) best=nt; } }); return best; };
     aVal=(h)=>bestNet(match.a,h); bVal=(h)=>bestNet(match.b,h);
   }
   return {aVal,bVal,isGroup};
@@ -1171,6 +1181,9 @@ function liveSegCount(){ let n=0; (State.config.rounds||[]).filter(r=>!r.test).f
 function totalSegCount(){ let n=0; (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>n+=segsOf(r).length); return n; }
 const roundLive = (r)=> segsOf(r).some(s=>s.format);
 const liveSegs = (r)=> segsOf(r).filter(s=>s.format);
+// segments a player can actually enter scores into — excludes agg (derived) segments like a
+// Nassau "Total", which has no scorecard of its own and is computed from front/back instead.
+const enterableSegs = (r)=> segsOf(r).filter(s=>s.format && !s.agg);
 
 /* ============================================================
    LOAD + POLL
@@ -1793,7 +1806,7 @@ function viewEnter(){
   if(round.frozen){
     return `${roundTabsTop}<div class="card"><div class="empty"><div class="big">🔒</div><b>${esc(round.name)} is locked</b><p class="muted" style="margin-top:6px">Scores for this round have been frozen by the admin. Check the leaderboard for results.</p></div></div>`;
   }
-  const segs=liveSegs(round);
+  const segs=enterableSegs(round);
   if(!State.entrySeg || !segs.find(s=>s.id===State.entrySeg)) State.entrySeg=segs[0].id;
   const seg=segs.find(s=>s.id===State.entrySeg);
 
@@ -1903,14 +1916,14 @@ function setSide(id){ State.entrySide=id; const r=curEntryRefs(); if(r.seg) Stat
 function setHole(h){ State.entryHole=h; render(false); }
 function nextHole(){
   const round=State.config.rounds.find(r=>r.id===State.activeRound);
-  const seg=liveSegs(round).find(s=>s.id===State.entrySeg);
+  const seg=enterableSegs(round).find(s=>s.id===State.entrySeg);
   if(!seg) return;
   State.entryHole = State.entryHole>=seg.end ? seg.start : State.entryHole+1;  // wrap last → first
   render(false);
 }
 function prevHole(){
   const round=State.config.rounds.find(r=>r.id===State.activeRound);
-  const seg=liveSegs(round).find(s=>s.id===State.entrySeg);
+  const seg=enterableSegs(round).find(s=>s.id===State.entrySeg);
   if(!seg) return;
   State.entryHole = State.entryHole<=seg.start ? seg.end : State.entryHole-1;  // wrap first → last
   render(false);
@@ -1918,7 +1931,7 @@ function prevHole(){
 
 function curEntryRefs(){
   const round=State.config.rounds.find(r=>r.id===State.activeRound);
-  const seg=liveSegs(round).find(s=>s.id===State.entrySeg) || segsOf(round)[0];
+  const seg=enterableSegs(round).find(s=>s.id===State.entrySeg) || segsOf(round)[0];
   return {round, seg, key:cardKey(round.id,seg.id,State.entrySide)};
 }
 function strokeLineHTML(round, seg, pid, hole, isIndiv){
@@ -2584,7 +2597,7 @@ function renderAdmin(){
     const segs=segsOf(r);
     const segSelects=segs.map(seg=>`
       <div class="field" style="margin:0 0 8px">
-        <label>${r.split?esc(seg.label)+' format':'Format'}</label>
+        <label>${r.split?esc(seg.label)+' format':'Format'}${seg.agg?' <span style="font-weight:400;color:var(--text-dim);text-transform:none">· auto-follows Front/Back, no separate scorecard</span>':''}</label>
         <select onchange="setSegFormat('${r.id}','${seg.id}',this.value)">${fmtOptions(seg.format)}</select>
         ${seg.format?`<div style="display:flex;gap:8px;margin-top:6px;align-items:center">
           <button class="btn ghost sm" style="flex:1" onclick="renderPairings('${r.id}','${seg.id}')">Pairings · ${segMatches(seg).length} match${segMatches(seg).length===1?'':'es'}</button>
@@ -2595,9 +2608,11 @@ function renderAdmin(){
     <div class="card tight">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
         <b>${esc(r.name)} · ${esc(r.dateLabel)}${r.frozen?' 🔒':''}</b>
-        <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text-dim)">
-          <input type="checkbox" ${r.split?'checked':''} onchange="setSplit('${r.id}',this.checked)" style="width:17px;height:17px"/> Split
-        </label>
+        <select onchange="setSplitMode('${r.id}',this.value)" style="width:auto;padding:6px 8px;border-radius:8px;border:1px solid var(--line);font-size:12px;font-weight:600;color:var(--text-dim)">
+          <option value="none" ${splitModeOf(r)==='none'?'selected':''}>All 18</option>
+          <option value="half" ${splitModeOf(r)==='half'?'selected':''}>Front 9 + Back 9</option>
+          <option value="nassau" ${splitModeOf(r)==='nassau'?'selected':''}>Nassau (Front + Back + Total)</option>
+        </select>
       </div>
       <div class="field" style="margin:0 0 8px">
         <label>Course</label>
@@ -2716,25 +2731,46 @@ async function saveConfig(){
 function setTeamName(id,v){ team(id).name=v; saveConfig(); }
 function setTeamColor(id,v){ team(id).color=v; saveConfig(); render(); }
 async function setRoundField(rid,field,val){ State.config.rounds.find(r=>r.id===rid)[field]=val; await saveConfig(); renderAdmin(); }
-async function setSplit(rid, on){
+// "none" = All 18 in one segment. "half" = Front 9 + Back 9 (2 pts/match).
+// "nassau" = Front 9 + Back 9 + Total (3 pts/match — a true Nassau: front, back, and overall
+// are three separate bets on the same pairings). The Total segment is "agg": it has no
+// scorecard of its own — it's computed by combining whatever's entered in Front + Back.
+function splitModeOf(r){ return r.nassau ? 'nassau' : (r.split ? 'half' : 'none'); }
+async function setSplitMode(rid, mode){
   const r=State.config.rounds.find(x=>x.id===rid);
   const segs=segsOf(r);
-  if(on){
-    const frontFmt=segs[0]?.format||'', frontGroups=segs[0]?.groups||[];
-    r.split=true;
+  const fmt=segs[0]?.format||'', groups=segs[0]?.groups||[];
+  const matches=JSON.parse(JSON.stringify(segs[0]?.matches||[]));
+  if(mode==='none'){
+    r.split=false; r.nassau=false;
+    r.segments=[{id:'f', label:'All 18', start:1, end:18, format:fmt, groups, matches:JSON.parse(JSON.stringify(matches))}];
+  } else if(mode==='half'){
+    r.split=true; r.nassau=false;
     r.segments=[
-      {id:'f', label:'Front 9', start:1, end:9, format:frontFmt, groups:frontGroups},
-      {id:'b', label:'Back 9', start:10, end:18, format:segs[1]?.format||'', groups:segs[1]?.groups||[]},
+      {id:'f', label:'Front 9', start:1, end:9, format:fmt, groups, matches:JSON.parse(JSON.stringify(matches))},
+      {id:'b', label:'Back 9', start:10, end:18, format:fmt, groups, matches:JSON.parse(JSON.stringify(matches))},
     ];
   } else {
-    r.split=false;
-    r.segments=[{id:'f', label:'All 18', start:1, end:18, format:segs[0]?.format||'', groups:segs[0]?.groups||[]}];
+    r.split=true; r.nassau=true;
+    r.segments=[
+      {id:'f', label:'Front 9', start:1, end:9, format:fmt, groups, matches:JSON.parse(JSON.stringify(matches))},
+      {id:'b', label:'Back 9', start:10, end:18, format:fmt, groups, matches:JSON.parse(JSON.stringify(matches))},
+      {id:'t', label:'Total', start:1, end:18, format:fmt, groups, matches:JSON.parse(JSON.stringify(matches)), agg:true},
+    ];
   }
   await saveConfig(); renderAdmin();
 }
+// Front/Back/Total are the same match played three ways for points, so in Nassau mode a
+// format or pairings edit to any one segment mirrors to the other two automatically —
+// there's only ever one real set of pairings per round.
+function syncNassauSiblings(r, seg){
+  if(!r?.nassau) return;
+  const fmt=seg.format, matches=JSON.parse(JSON.stringify(seg.matches||[]));
+  segsOf(r).forEach(s=>{ if(s.id!==seg.id){ s.format=fmt; s.matches=JSON.parse(JSON.stringify(matches)); } });
+}
 async function setSegFormat(rid, segId, val){
   const r=State.config.rounds.find(x=>x.id===rid);
-  const seg=segsOf(r).find(s=>s.id===segId); if(seg){ seg.format=val; if(!seg.matches) seg.matches=[]; }
+  const seg=segsOf(r).find(s=>s.id===segId); if(seg){ seg.format=val; if(!seg.matches) seg.matches=[]; syncNassauSiblings(r,seg); }
   await saveConfig(); renderAdmin();
 }
 function findSeg(rid,segId){ const r=State.config.rounds.find(x=>x.id===rid); return {r, seg: segsOf(r).find(s=>s.id===segId)}; }
@@ -2777,25 +2813,25 @@ function renderPairings(rid, segId){
     </div>`);
 }
 async function autoPair(rid,segId){
-  const {seg}=findSeg(rid,segId); const per=perSideFor(seg.format);
+  const {r,seg}=findSeg(rid,segId); const per=perSideFor(seg.format);
   const a=teamRoster(State.config.teams[0].id).map(p=>p.id);
   const b=teamRoster(State.config.teams[1].id).map(p=>p.id);
   const n=Math.min(Math.floor(a.length/per),Math.floor(b.length/per));
   const matches=[];
   for(let k=0;k<n;k++){ matches.push({id:newMatchId(), a:a.slice(k*per,k*per+per), b:b.slice(k*per,k*per+per)}); }
-  seg.matches=matches; await saveConfig(); renderPairings(rid,segId);
+  seg.matches=matches; syncNassauSiblings(r,seg); await saveConfig(); renderPairings(rid,segId);
 }
 async function addMatch(rid,segId,per){
-  const {seg}=findSeg(rid,segId);
+  const {r,seg}=findSeg(rid,segId);
   const a=[],b=[];
   for(let i=0;i<per;i++){ const av=$('#pairA'+i).value, bv=$('#pairB'+i).value; if(av) a.push(av); if(bv) b.push(bv); }
   if(!a.length||!b.length) return;
   seg.matches=seg.matches||[]; seg.matches.push({id:newMatchId(), a, b});
-  await saveConfig(); renderPairings(rid,segId);
+  syncNassauSiblings(r,seg); await saveConfig(); renderPairings(rid,segId);
 }
-async function removeMatch(rid,segId,mid){ const {seg}=findSeg(rid,segId); seg.matches=(seg.matches||[]).filter(m=>m.id!==mid); await saveConfig(); renderPairings(rid,segId); }
+async function removeMatch(rid,segId,mid){ const {r,seg}=findSeg(rid,segId); seg.matches=(seg.matches||[]).filter(m=>m.id!==mid); syncNassauSiblings(r,seg); await saveConfig(); renderPairings(rid,segId); }
 async function setMatchStart(rid,segId,mid,v){ const {seg}=findSeg(rid,segId); const m=(seg.matches||[]).find(x=>x.id===mid); if(m) m.start=(v===''?undefined:Number(v)); await saveConfig(); renderPairings(rid,segId); }
-async function clearMatches(rid,segId){ const {seg}=findSeg(rid,segId); seg.matches=[]; await saveConfig(); renderPairings(rid,segId); }
+async function clearMatches(rid,segId){ const {r,seg}=findSeg(rid,segId); seg.matches=[]; syncNassauSiblings(r,seg); await saveConfig(); renderPairings(rid,segId); }
 
 function editPlayer(pid){
   const p=pid?player(pid):{id:'',name:'',teamId:'',isCaptain:false};
@@ -2889,7 +2925,7 @@ function loadDemo(){
   cfg.rounds.forEach(r=>{
     const c=courseOf(r), pars=c?.pars||[];
     segsOf(r).forEach(seg=>{
-      if(!seg.format) return;
+      if(!seg.format || seg.agg) return;   // agg (e.g. Nassau "Total") has no card of its own — it reads Front/Back
       if(FORMATS[seg.format]?.scoring==='aggregate'){
         cfg.players.forEach(p=>demoFillCard(cardKey(r.id,seg.id,p.id), seg, pars, false));
       } else {
