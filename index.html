@@ -1689,7 +1689,7 @@ function tripCountdownHTML(){
   const seg=(id,val,label)=>`<div class="cd-seg"><b id="${id}">${String(val).padStart(2,'0')}</b><span>${label}</span></div>`;
   const colon=`<div class="cd-colon">:</div>`;
   return `<div class="countdown" id="countdownCard">
-    <div class="cd-eyebrow">⛳ Kickoff In</div>
+    <div class="cd-eyebrow">⛳ Tee Off In</div>
     <div class="cd-row">${seg('cdD',p.d,'Days')}${colon}${seg('cdH',p.h,'Hrs')}${colon}${seg('cdM',p.m,'Min')}${colon}${seg('cdS',p.s,'Sec')}</div>
     <div class="cd-sub">${esc(State.config.settings.tripSub||'')}</div>
   </div>`;
