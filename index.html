@@ -174,6 +174,7 @@ input,select{font-family:inherit;font-size:16px}
 .roster-item .hcp{margin-left:auto;text-align:center;font-family:'Oswald';line-height:1;min-width:40px}
 .roster-item .hcp b{font-size:19px;font-weight:700;display:block;color:var(--text)}
 .roster-item .hcp span{font-size:9px;letter-spacing:.12em;color:var(--text-dim)}
+.loyola-badge{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;background:#0B1E42;border:1.5px solid #F0B429;color:#F0B429;font-family:'Oswald';font-weight:700;font-size:7.5px;letter-spacing:-.02em;line-height:1;margin-left:5px;flex:none;vertical-align:middle;position:relative;top:-1px}
 .tag{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--ink);color:var(--light)}
 .vbox{flex:none;width:22px;height:22px;border-radius:6px;border:2px solid var(--line);display:grid;place-items:center;font-size:14px;font-weight:800;color:#fff}
 .vbox.on{background:var(--gold);border-color:var(--gold)}
@@ -619,7 +620,7 @@ const DEFAULT_CONFIG = () => ({
     allowance:{singles:100, betterball:85, shramble:100, scramble:100},
   },
   teams:[ {id:'t1',name:'Team Gold',color:'#F0B429'}, {id:'t2',name:'Team Blue',color:'#1E5FA8'} ],
-  players: TRIP_ROSTER.map((name,i)=>({ id:'p'+i, name, hcp:null, teamId:'', isCaptain:false, avatar:'' })),
+  players: TRIP_ROSTER.map((name,i)=>({ id:'p'+i, name, hcp:null, teamId:'', isCaptain:false, avatar:'', loyola:false })),
   courses:[
     {id:'c1', name:'True Blue Golf Club', address:'900 Blue Stem Dr, Pawleys Island, SC 29585', par:72,
      tee:'Gold', tees:[{name:'Gold',rating:73.3,slope:143},{name:'Blue',rating:71.8,slope:141},{name:'White',rating:68.9,slope:130},{name:'Black',rating:66.0,slope:114},{name:'Green',rating:62.2,slope:106}],
@@ -755,6 +756,9 @@ const player = (id)=> (State.config?.players||[]).find(p=>p.id===id);
 const team = (id)=> (State.config?.teams||[]).find(t=>t.id===id);
 const course = (id)=> (State.config?.courses||[]).find(c=>c.id===id);
 const avatarOf = (id)=> State.avatars[id] || player(id)?.avatar || '🏌️';
+// Small badge marking a confirmed Loyola Blakefield grad — an original blue/gold monogram
+// (the school's actual colors), not a reproduction of the school's own crest artwork.
+const loyolaBadge = (id)=> player(id)?.loyola ? `<span class="loyola-badge" title="Loyola Blakefield grad">LB</span>` : '';
 const hcpOf = (id)=>{ const v = State.hcps[id]!=null ? State.hcps[id] : player(id)?.hcp; return (v==null||v==='')?null:Number(v); };
 // lowest set handicap index across the whole roster — the field's scratch reference
 function fieldLowHcp(){
@@ -2129,7 +2133,7 @@ function viewRoster(){
       const sub=(txt||canEdit)?`<span>${esc(txt)}${txt&&canEdit?' ':''}${canEdit?`<b style="opacity:.5;font-weight:400">✏️${txt?'':' add title'}</b>`:''}</span>`:'';
       return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}>
         <div class="av">${avatarOf(p.id)}</div>
-        <div class="info"><b>${esc(p.name)}</b>${sub}</div>
+        <div class="info"><b>${esc(p.name)}${loyolaBadge(p.id)}</b>${sub}</div>
         <div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span>${netVsLowLabel(p.id)?`<span style="display:block;color:var(--gold);font-weight:700;font-size:11px;margin-top:2px">${netVsLowLabel(p.id)}</span>`:''}</div>
       </div>`;
     }).join('') || '<div class="muted">No players assigned</div>';
@@ -2144,7 +2148,7 @@ function viewRoster(){
   const un=unassigned.length?`<div class="card"><div class="eyebrow">${teams.some(t=>players.some(p=>p.teamId===t.id))?'Not on a team':'The Field · by handicap'}</div>${unassigned.map(p=>{
     const ti=titleOf(p.id), canEdit=(State.adminAuthed||p.id===State.me);
     const sub=(ti||canEdit)?`<span>${esc(ti)}${ti&&canEdit?' ':''}${canEdit?`<b style="opacity:.5;font-weight:400">✏️${ti?'':' add title'}</b>`:''}</span>`:'';
-    return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}</b>${sub}</div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span>${netVsLowLabel(p.id)?`<span style="display:block;color:var(--gold);font-weight:700;font-size:11px;margin-top:2px">${netVsLowLabel(p.id)}</span>`:''}</div></div>`;
+    return `<div class="roster-item"${canEdit?` onclick="renderTitleEditor('${p.id}')" style="cursor:pointer"`:''}><div class="av">${avatarOf(p.id)}</div><div class="info"><b>${esc(p.name)}${loyolaBadge(p.id)}</b>${sub}</div><div class="hcp"><b>${hcpOf(p.id)??'—'}</b><span>INDEX</span>${netVsLowLabel(p.id)?`<span style="display:block;color:var(--gold);font-weight:700;font-size:11px;margin-top:2px">${netVsLowLabel(p.id)}</span>`:''}</div></div>`;
   }).join('')}</div>`:'';
   const mv=myVotes();
   const mvNames=mv.map(id=>displayName(id)).filter(Boolean).join(' & ');
@@ -2651,7 +2655,7 @@ function renderAdmin(){
     const t=team(p.teamId);
     return `<div class="roster-item">
       <div class="av">${avatarOf(p.id)}</div>
-      <div class="info"><b>${esc(p.name)}</b><span>Idx ${hcpOf(p.id)??'—'} · ${t?esc(t.name):'No team'}${p.isCaptain?' · Captain':''}</span></div>
+      <div class="info"><b>${esc(p.name)}${loyolaBadge(p.id)}</b><span>Idx ${hcpOf(p.id)??'—'} · ${t?esc(t.name):'No team'}${p.isCaptain?' · Captain':''}</span></div>
       <button class="btn sm ghost" onclick="editPlayer('${p.id}')">Edit</button>
     </div>`;
   }).join('') || '<div class="muted">No players yet.</div>';
@@ -2910,8 +2914,11 @@ function editPlayer(pid){
           ${State.config.teams.map(t=>`<option value="${t.id}" ${p.teamId===t.id?'selected':''}>${esc(t.name)}</option>`).join('')}
         </select></div>
       </div>
-      <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:4px 0 14px">
+      <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:4px 0 10px">
         <input id="pCap" type="checkbox" ${p.isCaptain?'checked':''} style="width:20px;height:20px"/> Team captain
+      </label>
+      <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin:4px 0 14px">
+        <input id="pLoyola" type="checkbox" ${p.loyola?'checked':''} style="width:20px;height:20px"/> <span class="loyola-badge" style="margin:0">LB</span> Loyola Blakefield grad
       </label>
       ${pid?`<div class="muted" style="display:flex;align-items:center;justify-content:space-between;margin:-6px 0 14px;padding:9px 11px;background:var(--paper2);border-radius:9px;font-size:12px">
         <span>${State.pins[pid]?'🔒 Name is locked with a PIN':'🔓 No PIN set'}</span>
@@ -2933,7 +2940,7 @@ async function savePlayer(pid){
   const raw=$('#pHcp').value;
   const v=validateHcp(raw);
   if(!v.ok){ alert(v.msg); return; }
-  const rec={ name, teamId:$('#pTeam').value, isCaptain:$('#pCap').checked };
+  const rec={ name, teamId:$('#pTeam').value, isCaptain:$('#pCap').checked, loyola:$('#pLoyola').checked };
   if(pid){ Object.assign(player(pid),rec); }
   else { rec.id='p'+Date.now().toString(36); rec.avatar=''; State.config.players.push(rec); pid=rec.id; }
   // Handicap index lives in its own blob (shared source of truth for self-serve + admin) — sync in the background
@@ -2950,7 +2957,7 @@ async function seedSample(){
   const existing=Object.fromEntries((State.config.players||[]).map(p=>[p.name,p]));
   State.config.players=TRIP_ROSTER.map((name,i)=>{
     const e=existing[name]||{};
-    return { id:e.id||('p'+i), name, hcp:e.hcp??null, teamId:e.teamId||'', isCaptain:e.isCaptain||false, avatar:e.avatar||'' };
+    return { id:e.id||('p'+i), name, hcp:e.hcp??null, teamId:e.teamId||'', isCaptain:e.isCaptain||false, avatar:e.avatar||'', loyola:e.loyola||false };
   });
   await saveConfig(); renderAdmin();
 }
