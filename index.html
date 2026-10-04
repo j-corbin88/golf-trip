@@ -169,8 +169,8 @@ input,select{font-family:inherit;font-size:16px}
 .roster-item{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
 .roster-item .av{width:30px;height:30px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:17px}
 .roster-item .info{flex:1;min-width:0}
-.roster-item .info b{font-size:14px}
-.roster-item .info span{font-size:11px;color:var(--text-dim);display:block}
+.roster-item .info b{font-size:14px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.roster-item .info>span{font-size:11px;color:var(--text-dim);display:block}
 .roster-item .hcp{margin-left:auto;text-align:center;font-family:'Oswald';line-height:1;min-width:40px}
 .roster-item .hcp b{font-size:19px;font-weight:700;display:block;color:var(--text)}
 .roster-item .hcp span{font-size:9px;letter-spacing:.12em;color:var(--text-dim)}
