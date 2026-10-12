@@ -437,7 +437,7 @@ const FORMATS = {
   betterball:{ label:'Better Ball',  side:'player', scoring:'match',     perSide:2, blurb:'Partners each play their own ball; the team counts the lower net score on each hole.' },
   shramble:  { label:'Shramble',     side:'player', scoring:'match',     perSide:2, blurb:'Team plays the best drive, then everyone plays their own ball in from there.' },
   scramble:  { label:'Scramble',     side:'group',  scoring:'match',     perSide:2, blurb:'Team plays one ball — best shot every time. One score per side, per hole.' },
-  teamtotal: { label:'Team Total',   side:'player', scoring:'aggregate', perSide:2, blurb:'Everyone plays their own ball. Pair players into tee-time groups — each group\'s combined net decides that group\'s point. No pairings set yet? It falls back to comparing the two teams\' full combined net instead.' },
+  teamtotal: { label:'Team Total',   side:'player', scoring:'aggregate', perSide:2, blurb:'Everyone plays their own ball. Players are paired into twosomes — in each match, the two players\' combined net is compared against the opposing twosome\'s combined net, and the lower total wins that match\'s point.' },
 };
 
 const AVATARS = ['⛳','🏌️','🏆','🎯','🦅','🐦','🍺','🥃','🚌','🕶️','🧢','🐐','🦈','🐊','🐅','🐯','🦍','🦏','🐺','🦁','🎩','👑','🃏','🎣','🐷','🦌','🍔','🌭','🏴‍☠️','⚡','🔥','💣','🎸','🎲','🚀','🛥️','🌊','🏖️','☕','🥩'];
@@ -460,7 +460,7 @@ function formatDetailNote(key){
     betterball:`2-v-2 match play at ${pct('betterball')}% allowance; each hole the team takes the better net (dots included) of the two partners.`,
     shramble:`2-v-2 match play at ${pct('shramble')}% allowance. Best drive off the tee, then each partner plays their own ball in; low net wins the hole.`,
     scramble:`Match play, one ball per side. Side handicap: ${scrambleMethodLabel()}.`,
-    teamtotal:`Stroke play — every player's net over the segment is added up and the lower team total wins.`,
+    teamtotal:`Match play aggregate — in each match, the twosome's combined net is compared with the opposing twosome's; lower total wins that match's point.`,
   };
   return map[key]||'';
 }
@@ -1001,24 +1001,28 @@ function computeMatch(round, seg, match){
   const final=remaining===0 || clinched;
   return {aUp,bUp,played,remaining,diff,final};
 }
-// Aggregate scoring within one tee-time group (Team Total, when pairings exist): sum each side's net
-// across ITS OWN players only, not the whole field — this is the fix for "compare within each match".
+// Team Total = match-play AGGREGATE: within ONE match (twosome vs twosome) add up each side's net and
+// compare only those players against each other — never the whole team. Only holes that every player in
+// the match has scored are counted, so the two totals always cover the same holes.
 function computeAggregateMatch(round, seg, match){
-  const totalFor=(ids)=>{
-    let sum=0, thruMin=null, any=false;
-    ids.forEach(id=>{
-      const card=State.cards[cardKey(round.id,seg.id,id)];
-      const net=netForCard(id,card,false,round,seg.format);
-      const thru=holesPlayed(card||{holes:{}});
-      if(net!=null){ sum+=net; any=true; }
-      thruMin = thruMin==null ? thru : Math.min(thruMin,thru);
-    });
-    return {total:any?sum:null, thru:thruMin||0};
-  };
-  const A=totalFor(match.a), B=totalFor(match.b);
+  const ids=[...match.a, ...match.b];
+  let aTotal=0, bTotal=0, thru=0;
+  for(let h=seg.start; h<=seg.end; h++){
+    const rid=segIdForHole(round, seg, h);
+    const gross={};
+    let all=ids.length>0;
+    ids.forEach(id=>{ const g=State.cards[cardKey(round.id,rid,id)]?.holes?.[h]; if(g==null) all=false; else gross[id]=g; });
+    if(!all) continue;
+    const net=(id)=>{
+      if(!useHcp() || (hcpOf(id)==null && !playerHasOverrides(round.id,id))) return gross[id];
+      return gross[id]-strokeSheet(id, round, h);
+    };
+    aTotal += match.a.reduce((t,id)=>t+net(id),0);
+    bTotal += match.b.reduce((t,id)=>t+net(id),0);
+    thru++;
+  }
   const total=seg.end-seg.start+1;
-  const thru=Math.min(A.thru,B.thru);
-  return {aTotal:A.total, bTotal:B.total, thru, remaining:total-thru, final:thru>=total};
+  return {aTotal:thru?aTotal:null, bTotal:thru?bTotal:null, thru, remaining:total-thru, final:thru>=total};
 }
 function aggPointSplit(agg){
   if(agg.aTotal==null || agg.bTotal==null) return null;
@@ -1163,13 +1167,12 @@ function segTeamNet(round, seg){ // provisional fallback when no matches defined
 const segWeight = (seg)=> (seg?.weight!=null && seg.weight!=='') ? Number(seg.weight) : 1;
 function pointsAvailable(){
   let n=0;
-  const teamsHavePlayers = (State.config.teams||[]).length>0 && (State.config.teams||[]).every(t=>teamRoster(t.id).length>0);
   (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>segsOf(r).forEach(seg=>{
     if(!seg.format) return;
     const w=segWeight(seg);
     if(FORMATS[seg.format]?.scoring==='aggregate'){
       const ms=segMatches(seg);
-      n += ms.length ? ms.length*w : (teamsHavePlayers ? w : 0);
+      n += ms.length*w;
     }
     else { n += segMatches(seg).length*w; }
   }));
@@ -1192,12 +1195,6 @@ function tripPoints(){
           if(aT) pts[aT]=(pts[aT]||0)+sp.a*w;
           if(bT) pts[bT]=(pts[bT]||0)+sp.b*w;
         });
-      } else if(isAgg){
-        const tn=segTeamNet(r,seg); const entries=Object.entries(tn).filter(([,v])=>v.played);
-        if(entries.length<2) return;
-        entries.sort((a,b)=>a[1].net-b[1].net);
-        if(entries[0][1].net===entries[1][1].net){ entries.forEach(([id])=>pts[id]+=0.5*w); }
-        else pts[entries[0][0]]+=1*w;
       }
     });
   });
@@ -1781,24 +1778,12 @@ function teamTotalBoard(round,seg){
       </div></div>`;
     }).join('');
     return `<div class="card">${head}${matchHead}${rows}
-      <div class="muted" style="margin-top:8px;font-size:11px">Each tee-time group's combined net decides that group's point — lower total wins the group.</div>
+      <div class="muted" style="margin-top:8px;font-size:11px">Each match compares the two twosomes' combined net — only the players in that match count. Lower total wins the match.</div>
     </div>`;
   }
-  // fallback: no pairings set yet — compare the two whole teams (old behavior)
-  const tn=segTeamNet(round,seg);
-  const teams=(State.config.teams||[]).map(t=>({t, net:tn[t.id]?.net, played:tn[t.id]?.played}));
-  const playedTeams=teams.filter(x=>x.played);
-  const low=playedTeams.length?Math.min(...playedTeams.map(x=>x.net)):null;
-  const rows=teams.map(x=>{
-    const lead = x.played && low!=null && x.net===low && playedTeams.length>1;
-    return `<div class="row">
-      <div class="teamdot" style="background:${x.t.color}"></div>
-      <div class="nm"><b style="${lead?'color:'+x.t.color:''}">${esc(x.t.name)}</b><span>${x.played?'combined net':'no scores yet'}</span></div>
-      <div class="sc">${x.played?Math.round(x.net):'—'}</div>
-    </div>`;
-  }).join('');
-  return `<div class="card">${head}${rows}
-    <div class="muted" style="margin-top:8px;font-size:11px">No tee-time pairings set — comparing the two teams' full combined net. Add pairings in Admin to score it by group instead.</div>
+  // no twosome pairings yet — Team Total is only ever scored match vs match, so there's nothing to total
+  return `<div class="card">${head}
+    <div class="muted" style="margin-top:4px">No twosome matches set yet. Team Total scores each pair against the opposing pair in its match — set the pairings in Admin → Pairings.</div>
   </div>`;
 }
 function segMatchBoard(round,seg){
@@ -2850,7 +2835,13 @@ function syncNassauSiblings(r, seg){
 }
 async function setSegFormat(rid, segId, val){
   const r=State.config.rounds.find(x=>x.id===rid);
-  const seg=segsOf(r).find(s=>s.id===segId); if(seg){ seg.format=val; if(!seg.matches) seg.matches=[]; syncNassauSiblings(r,seg); }
+  const seg=segsOf(r).find(s=>s.id===segId); if(seg){ seg.format=val; if(!seg.matches) seg.matches=[];
+    // Team Total only works as twosome-vs-twosome matches, so pair them up automatically (admin can still edit)
+    if(FORMATS[val]?.scoring==='aggregate' && !seg.matches.length && State.config.teams?.length>=2){
+      const per=perSideFor(val), a=teamRoster(State.config.teams[0].id).map(p=>p.id), b=teamRoster(State.config.teams[1].id).map(p=>p.id);
+      for(let k=0;k<Math.min(Math.floor(a.length/per),Math.floor(b.length/per));k++) seg.matches.push({id:newMatchId(), a:a.slice(k*per,k*per+per), b:b.slice(k*per,k*per+per)});
+    }
+    syncNassauSiblings(r,seg); }
   await saveConfig(); renderAdmin();
 }
 function findSeg(rid,segId){ const r=State.config.rounds.find(x=>x.id===rid); return {r, seg: segsOf(r).find(s=>s.id===segId)}; }
