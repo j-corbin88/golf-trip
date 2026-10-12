@@ -1365,6 +1365,48 @@ async function resetSandboxScores(){
   for(const k of keys){ Store.del(k); delete State.cards[k]; }
   render(true);
 }
+// Pair two teams by handicap: singles = k-th lowest vs k-th lowest; twosomes = each pair is
+// (low + high handicap) so every twosome is balanced, then k-th twosome plays k-th twosome.
+function pairByHcp(per, aIds, bIds){
+  const key=(id)=>{ const v=hcpOf(id); return v==null?999:v; };
+  const srt=(ids)=>ids.slice().sort((x,y)=>key(x)-key(y));
+  const A=srt(aIds), B=srt(bIds);
+  const group=(L)=>{
+    if(per===1) return L.map(id=>[id]);
+    if(per===2){ const out=[]; for(let k=0;k<Math.floor(L.length/2);k++) out.push([L[k], L[L.length-1-k]]); return out; }
+    const out=[]; for(let k=0;k+per<=L.length;k+=per) out.push(L.slice(k,k+per)); return out;
+  };
+  const ga=group(A), gb=group(B), n=Math.min(ga.length,gb.length), out=[];
+  for(let k=0;k<n;k++) out.push({id:newMatchId(), a:ga[k], b:gb[k]});
+  return out;
+}
+// Copy the REAL roster into the sandbox — real names, teams and handicaps, on the real Round 1 course —
+// under throwaway ids (sx_<id>) so nothing the sandbox does can ever touch a real player's handicap or scores.
+async function loadRealIntoSandbox(){
+  const real=State.realConfig; if(!real?.players?.length){ alert('No real roster to copy yet.'); return; }
+  const cfg=State.config;
+  const oldIds=(cfg.players||[]).map(p=>p.id);
+  const keys=Object.keys(State.cards).filter(k=>k.startsWith('card:srd:'));
+  for(const k of keys){ Store.del(k); delete State.cards[k]; }
+  oldIds.forEach(id=>{ delete State.hcps[id]; Store.del('hcp:'+id); });
+  const rt=real.teams||[];
+  cfg.teams=[ {id:'sg', name:rt[0]?.name||'Sandbox Gold', color:rt[0]?.color||'#F0B429'}, {id:'sb', name:rt[1]?.name||'Sandbox Blue', color:rt[1]?.color||'#1E5FA8'} ];
+  const tmap={}; if(rt[0]) tmap[rt[0].id]='sg'; if(rt[1]) tmap[rt[1].id]='sb';
+  cfg.players=real.players.filter(p=>tmap[p.teamId]).map(p=>{
+    const sid='sx_'+p.id;
+    const v = State.hcps[p.id]!=null ? State.hcps[p.id] : p.hcp;
+    if(v!=null && v!==''){ State.hcps[sid]=Number(v); Store.set('hcp:'+sid,{index:Number(v)}); markRecentWrite('hcp:'+sid); }
+    return {id:sid, name:p.name, teamId:tmap[p.teamId], isCaptain:!!p.isCaptain, hcp:null, avatar:State.avatars[p.id]||p.avatar||'', loyola:!!p.loyola, fantasy:!!p.fantasy, realId:p.id};
+  });
+  // real Round 1 course (its own slope/rating/par/stroke index) so handicaps behave like the real thing
+  const rc=(real.courses||[]).find(c=>c.id===(real.rounds?.[0]?.courseId)) || (real.courses||[])[0];
+  if(rc){ const c=JSON.parse(JSON.stringify(rc)); c.id='sc1'; c.name='Sandbox · '+(rc.name||'Course'); cfg.courses=[c]; cfg.rounds[0].courseId='sc1'; }
+  cfg.settings.useHandicaps=true;
+  const seg=cfg.rounds[0].segments[0];
+  seg.matches=pairByHcp(perSideFor(seg.format||'singles'), teamRoster('sg').map(p=>p.id), teamRoster('sb').map(p=>p.id));
+  State.entrySeg=null; State.entrySide=null; State.me=null; SandboxDevice.set('me',null);
+  await saveConfig(); render(false); renderSandboxSettings();
+}
 function renderSandboxSettings(){
   const round=State.config.rounds[0], seg=round.segments[0];
   const fmtBtns=Object.entries(FORMATS).map(([key,f])=>
@@ -1379,7 +1421,11 @@ function renderSandboxSettings(){
     <div class="modal-b">
       <div class="eyebrow">Match type</div>
       <div style="margin-bottom:6px">${fmtBtns}</div>
-      <div class="muted" style="font-size:11px;margin-bottom:14px">Switching re-pairs the testers automatically for the new format.</div>
+      <div class="muted" style="font-size:11px;margin-bottom:14px">Switching re-pairs everyone automatically (balanced by handicap) for the new format.</div>
+      <div class="eyebrow">Players &amp; pairings</div>
+      <button class="btn gold sm" style="width:100%;margin-bottom:6px" onclick="renderPairings('${round.id}','${seg.id}')">Set pairings (${segMatches(seg).length} match${segMatches(seg).length===1?'':'es'})</button>
+      <button class="btn ghost sm" style="width:100%;margin-bottom:6px" onclick="loadRealIntoSandbox()">Use the real roster &amp; handicaps</button>
+      <div class="muted" style="font-size:11px;margin-bottom:14px">Copies your real players, teams, handicaps and Round 1 course into the sandbox — as throwaway copies, so changing them here never touches the real trip. Tap again to re-copy fresh handicaps (clears sandbox scores).</div>
       <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:16px">
         <input type="checkbox" ${State.config.settings.useHandicaps?'checked':''} onchange="setSandboxUseHcp(this.checked)" style="width:20px;height:20px"/> Use handicaps (net play)
       </label>
@@ -1394,9 +1440,7 @@ async function setSandboxFormat(key){
   const per=perSideFor(key);
   const a=teamRoster(State.config.teams[0].id).map(p=>p.id);
   const b=teamRoster(State.config.teams[1].id).map(p=>p.id);
-  const n=Math.min(Math.floor(a.length/per),Math.floor(b.length/per));
-  const matches=[]; for(let k=0;k<n;k++){ matches.push({id:newMatchId(), a:a.slice(k*per,k*per+per), b:b.slice(k*per,k*per+per)}); }
-  seg.matches=matches;
+  seg.matches=pairByHcp(per, a, b);
   State.entrySeg=null; State.entrySide=null;   // old side ids (e.g. an individual player) may not exist under the new format's shape
   await saveConfig();
   render(false);          // update the screen behind the modal immediately — don't wait for the modal to close
@@ -2245,9 +2289,9 @@ function viewMore(){
     return `<div class="card">
       <div class="eyebrow">🧪 Sandbox Mode</div>
       <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:6px">Testing live scoring</h3>
-      <p class="muted">A completely separate space — its own fake players and teams, but the real save-and-sync path. Nothing here touches your actual trip. Send a friend the same link and have them pick a different Tester on their own phone.</p>
+      <p class="muted">A completely separate space — start with fake testers or copy in your real roster and handicaps, on the real save-and-sync path. Nothing here touches your actual trip. Send a friend the same link and have them pick a different Tester on their own phone.</p>
       <div class="muted" style="margin-top:10px">Currently testing: <b style="color:var(--text)">${esc(FORMATS[seg?.format]?.label||'—')}</b></div>
-      <button class="btn ghost sm" style="width:100%;margin-top:12px" onclick="renderSandboxSettings()">⚙️ Match type &amp; handicaps</button>
+      <button class="btn ghost sm" style="width:100%;margin-top:12px" onclick="renderSandboxSettings()">⚙️ Match type, pairings &amp; handicaps</button>
       <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="resetSandboxScores()">Clear sandbox scores</button>
       <button class="btn gold" style="width:100%;margin-top:8px" onclick="exitSandbox()">Exit sandbox — back to the real trip</button>
     </div>`;
@@ -2852,7 +2896,7 @@ function renderPairings(rid, segId){
   const [TA,TB]=State.config.teams;
   const aRoster=teamRoster(TA.id), bRoster=teamRoster(TB.id);
   const ms=segMatches(seg);
-  const nm=(id)=>player(id)?.name?.split(' ')[0]||'?';
+  const nm=(id)=>(player(id)?.name?.split(' ')[0]||'?')+(hcpOf(id)!=null?' ('+fmtH(hcpOf(id))+')':'');
   const matchRows = ms.length ? ms.map(m=>`
     <div class="roster-item">
       <div class="info"><b>${esc(m.a.map(nm).join(' / '))}</b><span>vs ${esc(m.b.map(nm).join(' / '))}</span></div>
@@ -2860,18 +2904,19 @@ function renderPairings(rid, segId){
         <input type="number" min="${seg.start}" max="${seg.end}" value="${m.start||seg.start}" onchange="setMatchStart('${rid}','${segId}','${m.id}',this.value)" style="width:46px;padding:6px;border-radius:8px;border:1px solid var(--line);text-align:center"/></div>
       <button class="btn sm ghost" style="color:var(--red)" onclick="removeMatch('${rid}','${segId}','${m.id}')">✕</button>
     </div>`).join('') : '<div class="muted">No matches yet.</div>';
-  const opts=(roster)=>roster.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  const opts=(roster)=>roster.slice().sort((x,y)=>(hcpOf(x.id)??999)-(hcpOf(y.id)??999)).map(p=>`<option value="${p.id}">${esc(p.name)}${hcpOf(p.id)!=null?' ('+fmtH(hcpOf(p.id))+')':''}</option>`).join('');
   const aSelects=Array.from({length:per},(_,i)=>`<select id="pairA${i}" class="pairsel">${opts(aRoster)}</select>`).join('');
   const bSelects=Array.from({length:per},(_,i)=>`<select id="pairB${i}" class="pairsel">${opts(bRoster)}</select>`).join('');
   const canAuto = aRoster.length>=per && bRoster.length>=per;
   showModal(`
-    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Pairings</h2><button class="btn sm ghost" onclick="renderAdmin()">Done</button></div>
+    <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Pairings</h2><button class="btn sm ghost" onclick="${State.sandbox?'renderSandboxSettings()':'renderAdmin()'}">Done</button></div>
     <div class="modal-b">
       <div class="muted" style="margin-bottom:10px">${esc(r.name)}${r.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${per} per side</div>
       ${(!canAuto)?`<div class="banner">Assign players to both teams first — ${esc(TA.name)} has ${aRoster.length}, ${esc(TB.name)} has ${bRoster.length}.</div>`:''}
       <div class="eyebrow">Matches</div>
       <div style="margin-bottom:10px">${matchRows}</div>
-      ${canAuto?`<button class="btn ghost sm" style="width:100%;margin-bottom:6px" onclick="autoPair('${rid}','${segId}')">Auto-pair by roster order</button>
+      ${canAuto?`<button class="btn gold sm" style="width:100%;margin-bottom:6px" onclick="autoPairByHcp('${rid}','${segId}')">Auto-pair by handicap (balanced)</button>
+      <button class="btn ghost sm" style="width:100%;margin-bottom:6px" onclick="autoPair('${rid}','${segId}')">Auto-pair by roster order</button>
       <button class="btn ghost sm" style="width:100%;margin-bottom:12px;color:var(--red)" onclick="clearMatches('${rid}','${segId}')">Clear all matches</button>
       <div class="divider"></div>
       <div class="eyebrow">Add a match manually</div>
@@ -2891,6 +2936,11 @@ async function autoPair(rid,segId){
   const matches=[];
   for(let k=0;k<n;k++){ matches.push({id:newMatchId(), a:a.slice(k*per,k*per+per), b:b.slice(k*per,k*per+per)}); }
   seg.matches=matches; syncNassauSiblings(r,seg); await saveConfig(); renderPairings(rid,segId);
+}
+async function autoPairByHcp(rid,segId){
+  const {r,seg}=findSeg(rid,segId); const per=perSideFor(seg.format);
+  seg.matches=pairByHcp(per, teamRoster(State.config.teams[0].id).map(p=>p.id), teamRoster(State.config.teams[1].id).map(p=>p.id));
+  syncNassauSiblings(r,seg); await saveConfig(); renderPairings(rid,segId);
 }
 async function addMatch(rid,segId,per){
   const {r,seg}=findSeg(rid,segId);
