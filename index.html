@@ -81,7 +81,7 @@ input,select{font-family:inherit;font-size:16px}
 .weather{background:var(--ink2);border-radius:16px;padding:12px 10px 10px;color:var(--light);box-shadow:var(--shadow);margin-bottom:14px}
 .weather .wx-eyebrow{font-family:'Oswald';text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:var(--gold);font-weight:600;margin:0 4px 9px}
 .weather .wx-row{display:flex;gap:8px;overflow-x:auto}
-.weather .wx-tile{flex:1 0 0;min-width:96px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:9px 6px 8px;text-align:center;cursor:pointer}
+.weather .wx-tile{flex:1 0 0;min-width:96px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:9px 6px 8px;text-align:center}
 .weather .wx-tile.on{border-color:var(--gold);background:rgba(240,180,41,.12)}
 .weather .wx-r{font-family:'Oswald';font-weight:600;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--light)}
 .weather .wx-d{font-size:10px;color:rgba(237,231,214,.65);margin-top:1px}
@@ -1731,13 +1731,13 @@ async function ensureWeather(){
     if(data && data.daily && data.hourly){
       State.weather={at:Date.now(), data};
       try{ localStorage.setItem('mbg-weather', JSON.stringify(State.weather)); }catch(e){}
-      if(State.view==='board' && document.getElementById('boardBody')) updateBoard();
+      if(State.view==='rounds') render(false);
     }
   }catch(e){ /* offline or blocked — just show nothing (or the last cached forecast) */ }
   finally{ _wxFetching=false; }
 }
 // one tile per live round: icon, temp at tee time, H/L, worst rain chance + top wind across the ~5 hour round
-function weatherHTML(rounds){
+function weatherHTML(rounds){   // shown at the top of the Rounds tab
   const dated=rounds.map(r=>({r, iso:roundISODate(r)})).filter(x=>x.iso);
   if(!dated.length || State.sandbox) return '';
   ensureWeather();
@@ -1747,15 +1747,15 @@ function weatherHTML(rounds){
   const tiles=dated.map(({r,iso})=>{
     const di=D.time.indexOf(iso);
     const head=`<div class="wx-r">${esc(r.name)}</div><div class="wx-d">${esc(r.dateLabel)}</div>`;
-    const on=State.activeRound===r.id?' on':'';
-    if(di<0) return `<div class="wx-tile${on}" onclick="setRound('${r.id}')">${head}<div class="wx-ic">🗓️</div><div class="wx-c">Forecast opens closer to the trip</div></div>`;
+    const on='';
+    if(di<0) return `<div class="wx-tile${on}" ">${head}<div class="wx-ic">🗓️</div><div class="wx-c">Forecast opens closer to the trip</div></div>`;
     const [ic,label]=wxInfo(D.weather_code[di]);
     const th=teeHourOf(r);
     const idxs=[]; for(let k=0;k<5;k++){ const i=H.time.indexOf(`${iso}T${String(Math.min(th+k,23)).padStart(2,'0')}:00`); if(i>=0) idxs.push(i); }
     const rain=idxs.length?Math.max(...idxs.map(i=>H.precipitation_probability[i]??0)):D.precipitation_probability_max[di];
     const wind=idxs.length?Math.max(...idxs.map(i=>H.wind_speed_10m[i]??0)):D.wind_speed_10m_max[di];
     const t0=idxs.length?H.temperature_2m[idxs[0]]:null;
-    return `<div class="wx-tile${on}" onclick="setRound('${r.id}')">${head}
+    return `<div class="wx-tile${on}">${head}
       <div class="wx-ic">${ic}</div>
       <div class="wx-t">${t0!=null?Math.round(t0)+'°':Math.round(D.temperature_2m_max[di])+'°'}${t0!=null?`<small>${hourLabel(th)}</small>`:''}</div>
       <div class="wx-c">${esc(label)}</div>
@@ -1791,7 +1791,7 @@ function boardBodyHTML(){
   const banner= State.boardMode==='players'
     ? `<div class="banner">Individual net across this round's holes. Scramble holes are team-only, so they don't appear here.</div>`
     : `<div class="banner">Match play: within each match the low handicap plays off scratch and the rest get the difference by stroke index. 1 point per match, ½ for a halve. Segments without pairings fall back to a provisional net total.</div>`;
-  return weatherHTML(rounds)+tabs+toggle+body+banner;
+  return tabs+toggle+body+banner;
 }
 function setBoardMode(m){ State.boardMode=m; render(false); }
 // Individual net leaderboard for a round (aggregates that round's individual-ball segments)
@@ -2249,7 +2249,7 @@ function viewRounds(){
       ${blurbs}
     </div>`;
   }).join('');
-  return `<div class="eyebrow">The Schedule</div>${cards}
+  return `${weatherHTML(rounds)}<div class="eyebrow">The Schedule</div>${cards}
     <div class="muted" style="text-align:center;margin-top:6px">Formats and courses are set by the admin under <b>More</b>.</div>`;
 }
 
