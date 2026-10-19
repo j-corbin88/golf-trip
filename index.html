@@ -634,6 +634,7 @@ const DEFAULT_CONFIG = () => ({
     resort:'The Villas at True Blue · Pawleys Island, SC',
     checkIn:'Check in at Litchfield Beach & Golf Resort · 14276 Ocean Highway, Pawleys Island, SC 29585',
     bookingRef:'US58057',
+    dinners:[ {day:'Sat · Oct 24', time:'6:30 PM', name:'Wicked Tuna Grill, Sushi, Bar', place:'Murrells Inlet, SC', url:'https://thewickedtuna.com', bookedBy:'Chris Hillis'} ],
     scrambleHcp:'low',
     useHandicaps:true,
     hcpLocked:false,
@@ -702,6 +703,7 @@ function reconcileTrip(){
     if(!cfg.settings[k] && def.settings[k]){ cfg.settings[k]=def.settings[k]; changed=true; }
   });
   if(!/villas/i.test(cfg.settings.resort||'')){ cfg.settings.resort=def.settings.resort; changed=true; }
+  if(!Array.isArray(cfg.settings.dinners)){ cfg.settings.dinners=JSON.parse(JSON.stringify(def.settings.dinners)); changed=true; }
   if(cfg.settings.useHandicaps===undefined){ cfg.settings.useHandicaps=true; changed=true; }
   if(!cfg.settings.allowance){ cfg.settings.allowance=JSON.parse(JSON.stringify(def.settings.allowance)); changed=true; }
   cfg.courses=cfg.courses||[];
@@ -2393,6 +2395,20 @@ function renderSizesAdmin(){
 /* ============================================================
    VIEW: MORE (records + admin entry)
    ============================================================ */
+// Dinner reservations shown in Trip HQ. Maps link searches by name + town so we never invent a street address.
+function dinnersHTML(s){
+  const list=(s&&s.dinners)||[]; if(!list.length) return '';
+  const rows=list.map(d=>{
+    const q=encodeURIComponent([d.name,d.place].filter(Boolean).join(', '));
+    return `<div style="text-align:left;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)">
+      <div class="eyebrow" style="margin-bottom:3px">🍽 Dinner · ${esc(d.day||'')}${d.time?' · '+esc(d.time):''}</div>
+      <div style="font-weight:700;font-size:15px">${esc(d.name)}</div>
+      <div class="muted"><a class="maplink" href="https://www.google.com/maps/search/?api=1&query=${q}" target="_blank" rel="noopener">📍 ${esc(d.place||'Map')}</a>${d.url?` · <a class="maplink" href="${esc(d.url)}" target="_blank" rel="noopener">Website</a>`:''}</div>
+      ${d.bookedBy?`<div class="muted" style="font-size:12px;margin-top:2px">Reservation made by ${esc(d.bookedBy)}</div>`:''}
+    </div>`;
+  }).join('');
+  return rows;
+}
 function viewMore(){
   if(State.sandbox){
     const seg=State.config.rounds[0]?.segments?.[0];
@@ -2414,6 +2430,7 @@ function viewMore(){
     <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:6px">${esc(s.resort||'True Blue Resort')}</h3>
     <div class="muted">${esc(s.checkIn||'')}</div>
     <div class="muted" style="margin-top:8px">Oct 22–25, 2026 · 16 golfers${s.bookingRef?' · Ref '+esc(s.bookingRef):''}</div>
+    ${dinnersHTML(s)}
   </div>
   ${vaultHTML()}
   <div class="card">
