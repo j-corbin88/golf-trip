@@ -78,6 +78,21 @@ input,select{font-family:inherit;font-size:16px}
 .cup-foot{text-align:center;font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-top:11px;color:rgba(237,231,214,.6)}
 
 /* ---- Live pre-trip countdown ---- */
+.weather{background:var(--ink2);border-radius:16px;padding:12px 10px 10px;color:var(--light);box-shadow:var(--shadow);margin-bottom:14px}
+.weather .wx-eyebrow{font-family:'Oswald';text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:var(--gold);font-weight:600;margin:0 4px 9px}
+.weather .wx-row{display:flex;gap:8px;overflow-x:auto}
+.weather .wx-tile{flex:1 0 0;min-width:96px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:9px 6px 8px;text-align:center;cursor:pointer}
+.weather .wx-tile.on{border-color:var(--gold);background:rgba(240,180,41,.12)}
+.weather .wx-r{font-family:'Oswald';font-weight:600;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--light)}
+.weather .wx-d{font-size:10px;color:rgba(237,231,214,.65);margin-top:1px}
+.weather .wx-ic{font-size:26px;line-height:1.25;margin-top:4px}
+.weather .wx-t{font-family:'Oswald';font-weight:700;font-size:22px;line-height:1;color:var(--light)}
+.weather .wx-t small{font-family:'Inter';font-weight:500;font-size:9px;color:rgba(237,231,214,.6);margin-left:3px}
+.weather .wx-c{font-size:10px;color:rgba(237,231,214,.8);margin-top:3px}
+.weather .wx-m{font-size:11px;color:rgba(237,231,214,.85);margin-top:5px;line-height:1.5}
+.weather .wx-m.rain{color:#8fc3ff}
+.weather .wx-none{font-size:11px;color:rgba(237,231,214,.6);margin-top:10px;padding:0 2px}
+.weather .wx-foot{font-size:9px;color:rgba(237,231,214,.45);margin:8px 4px 0;text-align:right}
 .countdown{background:var(--ink2);border-radius:16px;padding:14px 10px 12px;color:var(--light);box-shadow:var(--shadow);margin-bottom:16px;text-align:center}
 .countdown .cd-eyebrow{font-family:'Oswald';text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:var(--gold);font-weight:600;margin-bottom:10px}
 .countdown .cd-row{display:flex;align-items:center;justify-content:center;gap:2px}
@@ -1664,6 +1679,96 @@ function updateSyncNote(){
   if(st.pending>0){ el.textContent=`${st.pending} score${st.pending===1?'':'s'} waiting to sync — they'll send when you're back online`; el.style.display=''; }
   else { el.style.display='none'; }
 }
+/* ---------- Weather forecast (Open-Meteo: free, no API key) ---------- */
+const WX_DEFAULT = {lat:33.45, lon:-79.12};   // True Blue Resort, Pawleys Island SC
+function wxInfo(code){
+  const c=Number(code);
+  if(c===0) return ['☀️','Clear'];
+  if(c===1) return ['🌤️','Mostly clear'];
+  if(c===2) return ['⛅','Partly cloudy'];
+  if(c===3) return ['☁️','Overcast'];
+  if(c===45||c===48) return ['🌫️','Fog'];
+  if(c>=51&&c<=57) return ['🌦️','Drizzle'];
+  if(c===61||c===80) return ['🌦️','Light rain'];
+  if(c===63||c===81) return ['🌧️','Rain'];
+  if(c===65||c===66||c===67||c===82) return ['🌧️','Heavy rain'];
+  if(c>=71&&c<=77||c===85||c===86) return ['🌨️','Snow'];
+  if(c>=95) return ['⛈️','Thunderstorms'];
+  return ['🌡️','—'];
+}
+const MONTHS={jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12};
+// "Thu · Oct 22" -> "2026-10-22" (year comes from the trip start date); null if it isn't a real date (e.g. sandbox "Testing")
+function roundISODate(r){
+  const m=/([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})\b/.exec(String(r?.dateLabel||'').split('·').pop());
+  const mo=m && MONTHS[m[1].toLowerCase()]; if(!mo) return null;
+  const y=(String(State.config?.settings?.tripStart||'').slice(0,4)) || '2026';
+  return `${y}-${String(mo).padStart(2,'0')}-${String(m[2]).padStart(2,'0')}`;
+}
+function teeHourOf(r){
+  const m=/(\d{1,2}):(\d{2})\s*(AM|PM)/i.exec(r?.teeTime||''); if(!m) return 9;
+  let h=Number(m[1])%12; if(/pm/i.test(m[3])) h+=12; return h;
+}
+const hourLabel=(h)=>`${h%12||12} ${h>=12?'PM':'AM'}`;
+let _wxFetching=false;
+function loadWxCache(){
+  if(State.weather) return;
+  try{ const raw=localStorage.getItem('mbg-weather'); if(raw){ const w=JSON.parse(raw); if(w&&w.data&&w.at) State.weather=w; } }catch(e){}
+}
+async function ensureWeather(){
+  loadWxCache();
+  const fresh=State.weather && (Date.now()-State.weather.at < 30*60*1000);
+  if(fresh || _wxFetching) return;
+  _wxFetching=true;
+  try{
+    const st=State.config?.settings||{};
+    const lat=st.weatherLat!=null?st.weatherLat:WX_DEFAULT.lat, lon=st.weatherLon!=null?st.weatherLon:WX_DEFAULT.lon;
+    const url=`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}`
+      +`&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max`
+      +`&hourly=temperature_2m,precipitation_probability,wind_speed_10m`
+      +`&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FNew_York&forecast_days=16`;
+    const res=await fetch(url);
+    const data=await res.json();
+    if(data && data.daily && data.hourly){
+      State.weather={at:Date.now(), data};
+      try{ localStorage.setItem('mbg-weather', JSON.stringify(State.weather)); }catch(e){}
+      if(State.view==='board' && document.getElementById('boardBody')) updateBoard();
+    }
+  }catch(e){ /* offline or blocked — just show nothing (or the last cached forecast) */ }
+  finally{ _wxFetching=false; }
+}
+// one tile per live round: icon, temp at tee time, H/L, worst rain chance + top wind across the ~5 hour round
+function weatherHTML(rounds){
+  const dated=rounds.map(r=>({r, iso:roundISODate(r)})).filter(x=>x.iso);
+  if(!dated.length || State.sandbox) return '';
+  ensureWeather();
+  const w=State.weather?.data;
+  if(!w) return '';
+  const D=w.daily, H=w.hourly;
+  const tiles=dated.map(({r,iso})=>{
+    const di=D.time.indexOf(iso);
+    const head=`<div class="wx-r">${esc(r.name)}</div><div class="wx-d">${esc(r.dateLabel)}</div>`;
+    const on=State.activeRound===r.id?' on':'';
+    if(di<0) return `<div class="wx-tile${on}" onclick="setRound('${r.id}')">${head}<div class="wx-ic">🗓️</div><div class="wx-c">Forecast opens closer to the trip</div></div>`;
+    const [ic,label]=wxInfo(D.weather_code[di]);
+    const th=teeHourOf(r);
+    const idxs=[]; for(let k=0;k<5;k++){ const i=H.time.indexOf(`${iso}T${String(Math.min(th+k,23)).padStart(2,'0')}:00`); if(i>=0) idxs.push(i); }
+    const rain=idxs.length?Math.max(...idxs.map(i=>H.precipitation_probability[i]??0)):D.precipitation_probability_max[di];
+    const wind=idxs.length?Math.max(...idxs.map(i=>H.wind_speed_10m[i]??0)):D.wind_speed_10m_max[di];
+    const t0=idxs.length?H.temperature_2m[idxs[0]]:null;
+    return `<div class="wx-tile${on}" onclick="setRound('${r.id}')">${head}
+      <div class="wx-ic">${ic}</div>
+      <div class="wx-t">${t0!=null?Math.round(t0)+'°':Math.round(D.temperature_2m_max[di])+'°'}${t0!=null?`<small>${hourLabel(th)}</small>`:''}</div>
+      <div class="wx-c">${esc(label)}</div>
+      <div class="wx-c">H ${Math.round(D.temperature_2m_max[di])}° · L ${Math.round(D.temperature_2m_min[di])}°</div>
+      <div class="wx-m${rain>=40?' rain':''}">🌧 ${Math.round(rain)}% rain<br>💨 ${Math.round(wind)} mph</div>
+    </div>`;
+  }).join('');
+  const upd=new Date(State.weather.at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
+  return `<div class="weather"><div class="wx-eyebrow">🌤 Forecast · ${esc(State.config?.settings?.resort||'True Blue')}</div>
+    <div class="wx-row">${tiles}</div>
+    <div class="wx-foot">Temp at tee time · rain &amp; wind = worst during the round · updated ${esc(upd)} · open-meteo.com</div>
+  </div>`;
+}
 function boardBodyHTML(){
   const cfg=State.config;
   const rounds=cfg.rounds.filter(r=>roundLive(r) && !r.test);
@@ -1686,7 +1791,7 @@ function boardBodyHTML(){
   const banner= State.boardMode==='players'
     ? `<div class="banner">Individual net across this round's holes. Scramble holes are team-only, so they don't appear here.</div>`
     : `<div class="banner">Match play: within each match the low handicap plays off scratch and the rest get the difference by stroke index. 1 point per match, ½ for a halve. Segments without pairings fall back to a provisional net total.</div>`;
-  return tabs+toggle+body+banner;
+  return weatherHTML(rounds)+tabs+toggle+body+banner;
 }
 function setBoardMode(m){ State.boardMode=m; render(false); }
 // Individual net leaderboard for a round (aggregates that round's individual-ball segments)
