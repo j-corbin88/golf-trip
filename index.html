@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta name="format-detection" content="telephone=no, address=no">
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>The Cup · Myrtle Beach 2026</title>
@@ -78,6 +79,7 @@ input,select{font-family:inherit;font-size:16px}
 .cup-foot{text-align:center;font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-top:11px;color:rgba(237,231,214,.6)}
 
 /* ---- Live pre-trip countdown ---- */
+.maplink{color:#1E5FA8;font-weight:600;text-decoration:underline;text-underline-offset:2px}
 .weather{background:var(--ink2);border-radius:16px;padding:12px 10px 10px;color:var(--light);box-shadow:var(--shadow);margin-bottom:14px}
 .weather .wx-eyebrow{font-family:'Oswald';text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:var(--gold);font-weight:600;margin:0 4px 9px}
 .weather .wx-row{display:flex;gap:8px;overflow-x:auto}
@@ -2230,6 +2232,9 @@ function updateEntryAfterSave(card){
 /* ============================================================
    VIEW: ROUNDS
    ============================================================ */
+// Google Maps link for a course — opens the Maps app on phones. Explicit link so every address behaves the same
+// (otherwise iOS auto-links only the addresses it happens to recognise).
+const mapsUrl = (c)=> 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent([c?.name,c?.address].filter(Boolean).join(', '));
 function viewRounds(){
   const rounds=State.config.rounds;
   const cards=rounds.map(r=>{
@@ -2245,7 +2250,7 @@ function viewRounds(){
         <div><div class="eyebrow" style="margin-bottom:2px">${esc(r.dateLabel)}${r.teeTime?' · '+esc(r.teeTime):''}</div><h3 style="font-size:20px;text-transform:uppercase">${esc(r.name)}${r.split?' <span style="font-size:11px;color:var(--text-dim)">· split at the turn</span>':''}</h3></div>
         <div style="text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end">${fmtPills}</div>
       </div>
-      <div class="muted" style="margin-top:8px"><b style="color:var(--text)">${c?esc(c.name):'Course to be announced'}</b>${c?.par?' · Par '+c.par+(c.tee?' · '+esc(c.tee)+' tees ('+c.rating+'/'+c.slope+')':''):''}${c?.address?'<br>'+esc(c.address):''}${r.teeTime?'<br>First tee '+esc(r.teeTime):''}</div>
+      <div class="muted" style="margin-top:8px"><b style="color:var(--text)">${c?esc(c.name):'Course to be announced'}</b>${c?.par?' · Par '+c.par+(c.tee?' · '+esc(c.tee)+' tees ('+c.rating+'/'+c.slope+')':''):''}${c?.address?'<br><a class="maplink" href="'+mapsUrl(c)+'" target="_blank" rel="noopener">📍 '+esc(c.address)+'</a>':''}${r.teeTime?'<br>First tee '+esc(r.teeTime):''}</div>
       ${blurbs}
     </div>`;
   }).join('');
