@@ -2250,7 +2250,8 @@ function paintMatchRow(round, seg, sideId){
   const row=document.getElementById('matchRow'); if(!row) return;
   const prog=personalMatchStatus(round, seg, sideId) ? matchProgressionForSide(round, seg, sideId) : null;
   if(!prog){ row.innerHTML=''; return; }
-  let html=''; for(let h=seg.start; h<=seg.end; h++){ const {text,cls}=matchCellLabel(prog[h]); html+=`<div class="sc-box sc-match ${cls}">${text}</div>`; }
+  let html=`<div class="sc-plabel" title="Match">Match</div>`;   // the label cell — without it every cell shifts one column left
+  for(let h=seg.start; h<=seg.end; h++){ const {text,cls}=matchCellLabel(prog[h]); html+=`<div class="sc-box sc-match ${cls}">${text}</div>`; }
   row.innerHTML=html;
 }
 function updateEntryAfterSave(card){
