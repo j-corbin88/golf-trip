@@ -137,7 +137,8 @@ input,select{font-family:inherit;font-size:16px}
 .sc-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 14px;padding:0}
 .sc-table{display:grid;gap:4px;width:max-content}
 .sc-h{text-align:center;font-family:'Oswald';font-weight:600;font-size:13px;color:var(--text-dim);padding:2px 0}
-.sc-plabel{display:flex;align-items:center;font-size:10.5px;font-weight:700;color:var(--text-dim);padding-right:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;z-index:2;background:var(--paper)}
+.sc-plabel{display:flex;align-items:center;font-size:10.5px;font-weight:700;line-height:1.15;color:var(--text-dim);padding-right:4px;overflow:hidden;position:sticky;left:0;z-index:2;background:var(--paper)}
+.sc-plabel>span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
 .sc-plabel.mine{color:var(--text)}
 .sc-plabel.opp{color:#a23a30}
 .sc-opp{background:#e6ebf2;border-style:dashed;font-weight:600;color:var(--text)}
@@ -2091,7 +2092,7 @@ function viewEnter(){
 
   // One table for every format. A sticky label column says what each row is: Hole / Par / my row(s) / the
   // opposing row(s) / Match. Opponent rows are read-only and fill in live as the other side enters scores.
-  const lbl=(t,extra)=>`<div class="sc-plabel${extra?' '+extra:''}" title="${esc(t)}">${esc(t)}</div>`;
+  const lbl=(t,extra)=>`<div class="sc-plabel${extra?' '+extra:''}" title="${esc(t)}"><span>${esc(t)}</span></div>`;
   const rowHole = lbl('')+holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
   let rowPar, myRows;
   if(partners){
@@ -2250,7 +2251,7 @@ function paintMatchRow(round, seg, sideId){
   const row=document.getElementById('matchRow'); if(!row) return;
   const prog=personalMatchStatus(round, seg, sideId) ? matchProgressionForSide(round, seg, sideId) : null;
   if(!prog){ row.innerHTML=''; return; }
-  let html=`<div class="sc-plabel" title="Match">Match</div>`;   // the label cell — without it every cell shifts one column left
+  let html=`<div class="sc-plabel" title="Match"><span>Match</span></div>`;   // the label cell — without it every cell shifts one column left
   for(let h=seg.start; h<=seg.end; h++){ const {text,cls}=matchCellLabel(prog[h]); html+=`<div class="sc-box sc-match ${cls}">${text}</div>`; }
   row.innerHTML=html;
 }
