@@ -134,7 +134,7 @@ input,select{font-family:inherit;font-size:16px}
 .stepper .val small{display:block;font-family:'Inter';font-weight:600;font-size:12px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase}
 .stepper button.pm{width:60px;height:60px;border-radius:50%;background:var(--ink);color:var(--light);font-size:30px;font-weight:600;display:grid;place-items:center}
 .stepper button.pm:active{transform:scale(.94)}
-.sc-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px 14px;padding:0 16px}
+.sc-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 14px;padding:0}
 .sc-table{display:grid;gap:4px;width:max-content}
 .sc-h{text-align:center;font-family:'Oswald';font-weight:600;font-size:13px;color:var(--text-dim);padding:2px 0}
 .sc-plabel{display:flex;align-items:center;font-size:10.5px;font-weight:700;color:var(--text-dim);padding-right:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;z-index:2;background:var(--paper)}
@@ -2108,7 +2108,7 @@ function viewEnter(){
   const oppRows = opps.map(o=>lbl('vs '+o.label,'opp')+holes.map(h=>oppCellHTML(round,seg,o.id,h)).join('')).join('');
   const rowMatch = progression ? lbl('Match')+holes.map(h=>{ const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }).join('') : '';
   const tableHTML = `<div class="sc-scroll">
-      <div class="sc-table" style="grid-template-columns:76px repeat(${holes.length},44px)">
+      <div class="sc-table" style="grid-template-columns:86px repeat(${holes.length},44px)">
         ${rowHole}${rowPar}${myRows}${oppRows}<div id="matchRow" style="display:contents">${rowMatch}</div>
       </div>
     </div>
