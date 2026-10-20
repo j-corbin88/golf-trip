@@ -134,7 +134,8 @@ input,select{font-family:inherit;font-size:16px}
 .side-tabs button.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
 
 .stepper{display:flex;align-items:center;justify-content:center;gap:18px;margin:8px 0 16px}
-.stepper .val{font-family:'Oswald';font-weight:700;font-size:64px;line-height:1;min-width:96px;text-align:center}
+.stepper .val{font-family:'Oswald';font-weight:700;font-size:64px;line-height:1;min-width:112px;text-align:center;padding:8px 10px;border-radius:16px;transition:background .15s}
+.stepper .val.logged{background:#cfe6d6}   /* green = this hole's score is logged */
 .stepper .val small{display:block;font-family:'Inter';font-weight:600;font-size:12px;color:var(--text-dim);letter-spacing:.1em;text-transform:uppercase}
 .stepper button.pm{width:60px;height:60px;border-radius:50%;background:var(--ink);color:var(--light);font-size:30px;font-weight:600;display:grid;place-items:center}
 .stepper button.pm:active{transform:scale(.94)}
@@ -161,8 +162,10 @@ input,select{font-family:inherit;font-size:16px}
 .sc-match.win{background:#dff3df;color:#1f6b23}
 .sc-match.lose{background:#f7e3e1;color:#a23a30}
 .sc-match.as{background:#fbf0d6;color:#8a6a10}
-.quickrow{display:flex;gap:8px;margin-bottom:6px}
-.quickrow button{flex:1;padding:11px;border-radius:10px;background:var(--paper2);font-weight:600;font-size:13px;border:1px solid var(--line)}
+.quickrow{display:flex;gap:8px;margin-bottom:14px}
+.quickrow button{flex:1;padding:11px 4px;white-space:nowrap;border-radius:10px;background:var(--paper2);font-weight:600;font-size:13px;border:1px solid var(--line)}
+.quickrow button.enter{flex:1.5;background:var(--gold);color:var(--ink);border-color:var(--gold);font-size:15px;font-weight:700;transition:background .15s,color .15s}
+.quickrow button.enter.logged{background:#2f8f5b;color:#fff;border-color:#2f8f5b}   /* green = logged */
 .entered-by{text-align:center;font-size:11px;color:var(--text-dim);margin-top:10px}
 
 /* ---- Generic buttons/forms ---- */
@@ -2141,8 +2144,7 @@ function viewEnter(){
     </div>
     ${partners?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">Tap either partner's box to enter for them — no need to switch tabs. Opponent rows are live and read-only.</div>`:(opps.length?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">The “vs” row is your opponent's live score — read-only.</div>`:'')}`;
 
-  const cur=card.holes?.[State.entryHole];
-  const par=pars[State.entryHole-1]||4;
+  const shown=shownValFor(round,seg,State.entrySide,State.entryHole);
   const g=grossTotal(card), thru=holesPlayed(card);
   const enteredBy=card.enteredBy?`Last saved by ${esc(card.enteredBy)}`:'Not started';
   const strokeLine = strokeLineHTML(round, seg, side.id, State.entryHole, isIndiv);
@@ -2155,22 +2157,37 @@ function viewEnter(){
   ${strokeLine}
   <div class="card">
     <div class="mono" id="entryTotal" style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:10px">${entryTotalHTML(card,round,seg,side.id)}</div>
-    ${tableHTML}
     <div class="stepper">
       <button class="pm" id="minus">–</button>
-      <div class="val" id="strokeVal">${cur??par}<small>Strokes · Hole ${State.entryHole}</small></div>
+      <div class="val${shown.saved!=null&&shown.saved===shown.v?' logged':''}" id="strokeVal">${shown.v}<small>Strokes · Hole ${State.entryHole}</small></div>
       <button class="pm" id="plus">+</button>
     </div>
     <div class="quickrow">
       <button onclick="prevHole()">‹ Back</button>
-      <button onclick="setStroke(${par})">Par</button>
       <button onclick="clearHole()">Clear</button>
+      <button class="enter${shown.saved!=null&&shown.saved===shown.v?' logged':''}" id="enterBtn" onclick="enterScore()">Enter</button>
       <button onclick="nextHole()">Next ›</button>
     </div>
+    ${tableHTML}
     <div class="entered-by" id="enteredBy">${enteredBy}</div>
     <div id="syncNote" style="display:none;text-align:center;font-size:11px;color:#9a7a10;margin-top:6px"></div>
   </div>
   `;
+}
+// Score being keyed for the selected box. +/– only change this pending number; nothing is logged until Enter.
+function shownValFor(round, seg, sideId, hole){
+  const saved=State.cards[cardKey(round.id,seg.id,sideId)]?.holes?.[hole];
+  const par=courseOf(round)?.pars?.[hole-1]||4;
+  const pend=(State.pend && State.pend.key===[round.id,seg.id,sideId,hole].join('|')) ? State.pend.v : undefined;
+  return {saved, v: pend!==undefined ? pend : (saved ?? par)};
+}
+function paintStepper(){
+  const {round,seg}=curEntryRefs();
+  const {saved,v}=shownValFor(round,seg,State.entrySide,State.entryHole);
+  const logged = saved!=null && saved===v;
+  const valEl=document.getElementById('strokeVal');
+  if(valEl){ valEl.classList.toggle('logged',logged); valEl.innerHTML=`${v}<small>Strokes · Hole ${State.entryHole}</small>`; }
+  const en=document.getElementById('enterBtn'); if(en) en.classList.toggle('logged',logged);
 }
 function entryTotalHTML(card, round, seg, sideId){
   const g=grossTotal(card)||0, thru=holesPlayed(card), segN=seg.end-seg.start+1;
@@ -2229,9 +2246,7 @@ function selectCell(hole, pid){
   }
   const {round,seg,key}=curEntryRefs();
   const card=State.cards[key]||{holes:{}};
-  const par=(courseOf(round)?.pars?.[hole-1])||4;
-  const valEl=document.getElementById('strokeVal');
-  if(valEl) valEl.innerHTML=`${card.holes?.[hole] ?? par}<small>Strokes · Hole ${hole}</small>`;
+  paintStepper();
   const tot=document.getElementById('entryTotal');
   if(tot) tot.innerHTML=entryTotalHTML(card, round, seg, pid);
   const sl=document.getElementById('strokeLine');
@@ -2242,13 +2257,13 @@ function selectCell(hole, pid){
 }
 function wireEntry(){
   const {round,seg}=curEntryRefs();
-  const c=courseOf(round); const par=(c?.pars?.[State.entryHole-1])||4;
   const plus=$('#plus'), minus=$('#minus');
-  const curVal=()=>{ const {key}=curEntryRefs(); return State.cards[key]?.holes?.[State.entryHole]; };
-  if(plus) plus.onclick=()=>{ const v=Math.min(15,(curVal()??par)+1); saveHole(v); };
-  if(minus) minus.onclick=()=>{ const v=Math.max(1,(curVal()??par)-1); saveHole(v); };
-  window.setStroke=(v)=>{ saveHole(v); };
-  window.clearHole=()=>{ saveHole(null); };
+  const shownNow=()=>{ const r=curEntryRefs(); return shownValFor(r.round,r.seg,State.entrySide,State.entryHole).v; };
+  const setPend=(v)=>{ const r=curEntryRefs(); State.pend={key:[r.round.id,r.seg.id,State.entrySide,State.entryHole].join('|'), v}; paintStepper(); };
+  if(plus) plus.onclick=()=>setPend(Math.min(15,shownNow()+1));
+  if(minus) minus.onclick=()=>setPend(Math.max(1,shownNow()-1));
+  window.enterScore=()=>{ const v=shownNow(); State.pend=null; saveHole(v); };   // Enter logs the number on screen (par if untouched)
+  window.clearHole=()=>{ State.pend=null; saveHole(null); };
   const selCell=document.getElementById('hole-'+State.entryHole+'-'+State.entrySide);
   if(selCell && typeof selCell.scrollIntoView==='function') selCell.scrollIntoView({inline:'center', block:'nearest'});
 }
@@ -2286,8 +2301,7 @@ function paintMatchRow(round, seg, sideId){
 }
 function updateEntryAfterSave(card){
   const {round,seg}=curEntryRefs();
-  const valEl=document.getElementById('strokeVal');
-  if(valEl){ const par=courseOf(round)?.pars?.[State.entryHole-1]||4; valEl.innerHTML=`${card.holes?.[State.entryHole] ?? par}<small>Strokes · Hole ${State.entryHole}</small>`; }
+  paintStepper();
   const partners=partnerSideIds(seg, State.entrySide);
   if(partners){ partners.forEach(pid=>paintScoreCell(round, seg, pid, State.entryHole)); }
   else { paintScoreCell(round, seg, State.entrySide, State.entryHole); }
