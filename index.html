@@ -2154,7 +2154,6 @@ function viewEnter(){
   ${segTabs}
   <div class="muted" style="margin:-4px 2px 12px">${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')} · ${esc(round.dateLabel)}${round.split?' · '+esc(seg.label):''}</div>
   ${sideTabs}
-  ${strokeLine}
   <div class="card">
     <div class="mono" id="entryTotal" style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:10px">${entryTotalHTML(card,round,seg,side.id)}</div>
     <div class="stepper">
@@ -2172,6 +2171,7 @@ function viewEnter(){
     <div class="entered-by" id="enteredBy">${enteredBy}</div>
     <div id="syncNote" style="display:none;text-align:center;font-size:11px;color:#9a7a10;margin-top:6px"></div>
   </div>
+  ${strokeLine}
   `;
 }
 // Score being keyed for the selected box. +/– only change this pending number; nothing is logged until Enter.
@@ -2227,7 +2227,7 @@ function strokeLineHTML(round, seg, pid, hole, isIndiv){
   if(!isIndiv || !useHcp()) return '';
   let segStrokes=0; for(let h=seg.start; h<=seg.end; h++) segStrokes+=entryStrokesForHole(round,seg,pid,h);
   const strokeThisHole=entryStrokesForHole(round,seg,pid,hole);
-  return `<div class="muted" id="strokeLine" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--gold)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b style="color:var(--red)">red</b> numbers mark stroke holes${strokeThisHole?` · you get <b style="color:var(--gold)">${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'}</b> on hole ${hole}`:''}</div>`;
+  return `<div class="muted" id="strokeLine" style="margin:12px 4px 0;font-size:12px">You get <b style="color:var(--gold)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b style="color:var(--red)">red</b> numbers mark stroke holes${strokeThisHole?` · you get <b style="color:var(--gold)">${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'}</b> on hole ${hole}`:''}</div>`;
 }
 function selectCell(hole, pid){
   const prevSide=State.entrySide, prevHole=State.entryHole;
