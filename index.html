@@ -147,6 +147,8 @@ input,select{font-family:inherit;font-size:16px}
 .sc-box{aspect-ratio:1;border-radius:8px;background:var(--paper2);border:1px solid var(--line);font-family:'Oswald';font-weight:700;font-size:15px;color:var(--text);display:flex;align-items:center;justify-content:center;position:relative}
 .sc-box sup{font-size:9px;color:var(--red);font-weight:800;margin-left:1px;top:-.6em}
 .sc-par sup{color:var(--red)}
+.sc-score .hint{font-size:11px;font-weight:700;color:var(--red);opacity:.6}
+.sc-score.on .hint{color:#ff9b8f;opacity:1}
 .sc-score{background:var(--paper)}
 .sc-score.done{background:#dfe6dc}
 .sc-score.on{background:var(--ink);color:var(--light);border-color:var(--ink)}
@@ -2025,6 +2027,25 @@ function segLeaderboard(round,seg){
 /* ============================================================
    VIEW: ENTER SCORE
    ============================================================ */
+// Par cell: par plus the strokes this side gets on the hole as a small red number ("5" with red "2" = 2 strokes)
+function parCellInner(round, seg, sideId, h){
+  const par=courseOf(round)?.pars?.[h-1];
+  const sN=useHcp() ? entryStrokesForHole(round,seg,sideId,h) : 0;
+  return `${par||'—'}${sN>0?`<sup>${sN}</sup>`:''}`;
+}
+const parLabelText = (round,seg,sideId,partners)=> !useHcp() ? 'Par' : (partners ? `Par (${displayName(sideId)}'s strokes)` : 'Par (strokes)');
+// In partner formats the Par row can only show ONE player's strokes (whoever is selected), so each player's own
+// empty boxes also hint their strokes ("+2") until a score is entered.
+function strokeHint(round, seg, pid, h){
+  if(!useHcp() || !partnerSideIds(seg, pid)) return '';
+  const n=entryStrokesForHole(round,seg,pid,h);
+  return n>0 ? `<span class="hint">+${n}</span>` : '';
+}
+function paintParRow(round, seg, sideId){
+  const partners=partnerSideIds(seg, sideId);
+  for(let h=seg.start; h<=seg.end; h++){ const el=document.getElementById('par-'+h); if(el) el.innerHTML=parCellInner(round,seg,sideId,h); }
+  const lab=document.getElementById('parLabel'); if(lab) lab.firstChild.textContent=parLabelText(round,seg,sideId,partners);
+}
 // the opposing side(s) in this side's match: individual formats -> each opposing player; group formats -> the one opposing team card
 function opponentSides(seg, sideId){
   const m=matchOfSide(seg, sideId); if(!m) return [];
@@ -2067,7 +2088,7 @@ function viewEnter(){
 
   if(!editable.length) return `${roundTabs}${segTabs}<div class="card"><div class="empty"><div class="big">🔒</div><b>Nothing to enter here</b><p class="muted" style="margin-top:6px">You're not in a group for this segment. Your captain can enter for the team, or ask the admin to add you to a group.</p></div></div>`;
 
-  if(!State.entrySide || !editable.find(s=>s.id===State.entrySide)){ State.entrySide=editable[0].id; State.entryHole=startHoleForSide(seg,State.entrySide); }
+  if(!State.entrySide || !editable.find(s=>s.id===State.entrySide)){ State.entrySide=(editable.find(s=>s.id===State.me || (s.members||[]).includes(State.me))||editable[0]).id; State.entryHole=startHoleForSide(seg,State.entrySide); }
   // clamp the current hole into this segment's range (default to this side's start hole)
   if(State.entryHole<seg.start || State.entryHole>seg.end) State.entryHole=startHoleForSide(seg,State.entrySide);
   const side=editable.find(s=>s.id===State.entrySide);
@@ -2088,7 +2109,7 @@ function viewEnter(){
     const v=c2.holes?.[h];
     const net=v!=null?entryNetForHole(round,seg,pid,h,v):null;
     const showNet = v!=null && useHcp() && net!==v;
-    return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="selectCell(${h},'${pid}')">${v??''}${showNet?`<sup>${net}</sup>`:''}</button>`;
+    return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="selectCell(${h},'${pid}')">${v!=null?v:strokeHint(round,seg,pid,h)}${showNet?`<sup>${net}</sup>`:''}</button>`;
   };
 
   // One table for every format. A sticky label column says what each row is: Hole / Par / my row(s) / the
@@ -2096,14 +2117,13 @@ function viewEnter(){
   const lbl=(t,extra)=>`<div class="sc-plabel${extra?' '+extra:''}" title="${esc(t)}"><span>${esc(t)}</span></div>`;
   const rowHole = lbl('')+holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
   let rowPar, myRows;
+  const parLbl=`<div class="sc-plabel" id="parLabel"><span>${esc(parLabelText(round,seg,side.id,partners))}</span></div>`;
+  const parCells=holes.map(h=>`<div class="sc-box sc-par" id="par-${h}">${parCellInner(round,seg,side.id,h)}</div>`).join('');
   if(partners){
-    rowPar = lbl('Par')+holes.map(h=>`<div class="sc-box sc-par">${pars[h-1]||'—'}</div>`).join('');
+    rowPar = parLbl+parCells;
     myRows = partners.map(pid=>lbl(displayName(pid),'mine')+holes.map(h=>scoreCell(h,pid)).join('')).join('');
   } else {
-    rowPar = lbl('Par'+(useHcp()?' (strokes)':''))+holes.map(h=>{
-      const sN=entryStrokesForHole(round,seg,side.id,h);
-      return `<div class="sc-box sc-par">${pars[h-1]||'—'}${sN>0?`<sup>${sN}</sup>`:''}</div>`;
-    }).join('');
+    rowPar = parLbl+parCells;
     myRows = lbl(isIndiv?displayName(side.id):sideLabel(side),'mine')+holes.map(h=>scoreCell(h,side.id)).join('');
   }
   const opps = opponentSides(seg, side.id);
@@ -2185,7 +2205,7 @@ function strokeLineHTML(round, seg, pid, hole, isIndiv){
   if(!isIndiv || !useHcp()) return '';
   let segStrokes=0; for(let h=seg.start; h<=seg.end; h++) segStrokes+=entryStrokesForHole(round,seg,pid,h);
   const strokeThisHole=entryStrokesForHole(round,seg,pid,hole);
-  return `<div class="muted" id="strokeLine" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--gold)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b style="color:var(--gold)">•</b> marks a stroke hole${strokeThisHole?` · you get <b style="color:var(--gold)">${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'}</b> on hole ${hole}`:''}</div>`;
+  return `<div class="muted" id="strokeLine" style="margin:-4px 2px 10px;font-size:12px">You get <b style="color:var(--gold)">${segStrokes}</b> stroke${segStrokes===1?'':'s'} ${round.split?'this nine':'this round'} · <b style="color:var(--red)">red</b> numbers mark stroke holes${strokeThisHole?` · you get <b style="color:var(--gold)">${strokeThisHole>1?strokeThisHole+' strokes':'a stroke'}</b> on hole ${hole}`:''}</div>`;
 }
 function selectCell(hole, pid){
   const prevSide=State.entrySide, prevHole=State.entryHole;
@@ -2213,6 +2233,7 @@ function selectCell(hole, pid){
   const editable=editableSidesForSeg(round,seg);
   const side=editable.find(s=>s.id===pid);
   if(sl) sl.outerHTML=strokeLineHTML(round, seg, pid, hole, side?.kind==='player');
+  paintParRow(round, seg, pid);   // Par row's red stroke numbers follow whoever you just tapped
 }
 function wireEntry(){
   const {round,seg}=curEntryRefs();
@@ -2245,7 +2266,7 @@ function paintScoreCell(round, seg, sideId, hole){
   const v=State.cards[cardKey(round.id,seg.id,sideId)]?.holes?.[hole];
   btn.classList.toggle('on', hole===State.entryHole && sideId===State.entrySide);
   btn.classList.toggle('done', v!=null);
-  if(v==null){ btn.innerHTML=''; return; }
+  if(v==null){ btn.innerHTML=strokeHint(round,seg,sideId,hole); return; }
   const net=entryNetForHole(round,seg,sideId,hole,v);
   const showNet = useHcp() && net!==v;
   btn.innerHTML=`${v}${showNet?`<sup>${net}</sup>`:''}`;
