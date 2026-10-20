@@ -137,7 +137,10 @@ input,select{font-family:inherit;font-size:16px}
 .sc-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -16px 14px;padding:0 16px}
 .sc-table{display:grid;gap:4px;width:max-content}
 .sc-h{text-align:center;font-family:'Oswald';font-weight:600;font-size:13px;color:var(--text-dim);padding:2px 0}
-.sc-plabel{display:flex;align-items:center;font-size:11px;font-weight:700;color:var(--text-dim);padding-right:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc-plabel{display:flex;align-items:center;font-size:10.5px;font-weight:700;color:var(--text-dim);padding-right:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;z-index:2;background:var(--paper)}
+.sc-plabel.mine{color:var(--text)}
+.sc-plabel.opp{color:#a23a30}
+.sc-opp{background:#e6ebf2;border-style:dashed;font-weight:600;color:var(--text)}
 .sc-h.on{color:var(--text);font-weight:800}
 .sc-box{aspect-ratio:1;border-radius:8px;background:var(--paper2);border:1px solid var(--line);font-family:'Oswald';font-weight:700;font-size:15px;color:var(--text);display:flex;align-items:center;justify-content:center;position:relative}
 .sc-box sup{font-size:9px;color:var(--red);font-weight:800;margin-left:1px;top:-.6em}
@@ -2020,6 +2023,26 @@ function segLeaderboard(round,seg){
 /* ============================================================
    VIEW: ENTER SCORE
    ============================================================ */
+// the opposing side(s) in this side's match: individual formats -> each opposing player; group formats -> the one opposing team card
+function opponentSides(seg, sideId){
+  const m=matchOfSide(seg, sideId); if(!m) return [];
+  const other = entrySideOfMatch(seg, sideId, m)==='a' ? 'b' : 'a';
+  if(FORMATS[seg.format]?.side==='group') return [{id:`${m.id}:${other}`, label:sideLabel({kind:'group', members:m[other]})}];
+  return m[other].map(id=>({id, label:displayName(id)}));
+}
+// read-only cell for an opponent's score on one hole: gross, with their net beside it (same convention as your own row)
+function oppCellInner(round, seg, oppId, h){
+  const v=State.cards[cardKey(round.id,seg.id,oppId)]?.holes?.[h];
+  if(v==null) return '';
+  const net=entryNetForHole(round,seg,oppId,h,v);
+  return `${v}${(useHcp()&&net!==v)?`<sup>${net}</sup>`:''}`;
+}
+const oppCellHTML = (round,seg,oppId,h)=>`<div class="sc-box sc-opp" id="opp-${h}-${oppId}">${oppCellInner(round,seg,oppId,h)}</div>`;
+function paintOpponentRows(round, seg, sideId){
+  opponentSides(seg, sideId).forEach(o=>{
+    for(let h=seg.start; h<=seg.end; h++){ const el=document.getElementById(`opp-${h}-${o.id}`); if(el) el.innerHTML=oppCellInner(round,seg,o.id,h); }
+  });
+}
 function viewEnter(){
   if(!State.me) return `<div class="card"><div class="empty"><div class="big">👋</div><b>Sign in first</b><p class="muted" style="margin-top:6px">Tap your name up top so we know whose scores you're entering.</p><button class="btn gold" style="margin-top:14px" onclick="openIdentity()">Pick my name</button></div></div>`;
   const rounds=State.config.rounds.filter(r=>roundLive(r));
@@ -2066,33 +2089,30 @@ function viewEnter(){
     return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="selectCell(${h},'${pid}')">${v??''}${showNet?`<sup>${net}</sup>`:''}</button>`;
   };
 
-  let tableHTML;
+  // One table for every format. A sticky label column says what each row is: Hole / Par / my row(s) / the
+  // opposing row(s) / Match. Opponent rows are read-only and fill in live as the other side enters scores.
+  const lbl=(t,extra)=>`<div class="sc-plabel${extra?' '+extra:''}" title="${esc(t)}">${esc(t)}</div>`;
+  const rowHole = lbl('')+holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
+  let rowPar, myRows;
   if(partners){
-    const lbl=(t)=>`<div class="sc-plabel">${esc(t)}</div>`;
-    const rowHole = lbl('')+holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
-    const rowPar = lbl('Par')+holes.map(h=>`<div class="sc-box sc-par">${pars[h-1]||'—'}</div>`).join('');
-    const playerRows = partners.map(pid=>lbl(displayName(pid))+holes.map(h=>scoreCell(h,pid)).join('')).join('');
-    const rowMatch = progression ? lbl('')+holes.map(h=>{ const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }).join('') : '';
-    tableHTML = `<div class="sc-scroll">
-      <div class="sc-table" style="grid-template-columns:62px repeat(${holes.length},44px)">
-        ${rowHole}${rowPar}${playerRows}<div id="matchRow" style="display:contents">${rowMatch}</div>
-      </div>
-      </div>
-      <div class="muted" style="font-size:11px;margin:-6px 2px 12px">Tap either partner's box below to enter for them — no need to switch tabs.</div>`;
+    rowPar = lbl('Par')+holes.map(h=>`<div class="sc-box sc-par">${pars[h-1]||'—'}</div>`).join('');
+    myRows = partners.map(pid=>lbl(displayName(pid),'mine')+holes.map(h=>scoreCell(h,pid)).join('')).join('');
   } else {
-    const rowHole = holes.map(h=>`<div class="sc-h ${h===State.entryHole?'on':''}">${h}</div>`).join('');
-    const rowPar = holes.map(h=>{
+    rowPar = lbl('Par'+(useHcp()?' (strokes)':''))+holes.map(h=>{
       const sN=entryStrokesForHole(round,seg,side.id,h);
       return `<div class="sc-box sc-par">${pars[h-1]||'—'}${sN>0?`<sup>${sN}</sup>`:''}</div>`;
     }).join('');
-    const rowScore = holes.map(h=>scoreCell(h,side.id)).join('');
-    const rowMatch = progression ? holes.map(h=>{ const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }).join('') : '';
-    tableHTML = `<div class="sc-scroll">
-      <div class="sc-table" style="grid-template-columns:repeat(${holes.length},44px)">
-        ${rowHole}${rowPar}${rowScore}<div id="matchRow" style="display:contents">${rowMatch}</div>
-      </div>
-      </div>`;
+    myRows = lbl(isIndiv?displayName(side.id):sideLabel(side),'mine')+holes.map(h=>scoreCell(h,side.id)).join('');
   }
+  const opps = opponentSides(seg, side.id);
+  const oppRows = opps.map(o=>lbl('vs '+o.label,'opp')+holes.map(h=>oppCellHTML(round,seg,o.id,h)).join('')).join('');
+  const rowMatch = progression ? lbl('Match')+holes.map(h=>{ const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }).join('') : '';
+  const tableHTML = `<div class="sc-scroll">
+      <div class="sc-table" style="grid-template-columns:76px repeat(${holes.length},44px)">
+        ${rowHole}${rowPar}${myRows}${oppRows}<div id="matchRow" style="display:contents">${rowMatch}</div>
+      </div>
+    </div>
+    ${partners?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">Tap either partner's box to enter for them — no need to switch tabs. Opponent rows are live and read-only.</div>`:(opps.length?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">The “vs” row is your opponent's live score — read-only.</div>`:'')}`;
 
   const cur=card.holes?.[State.entryHole];
   const par=pars[State.entryHole-1]||4;
@@ -2241,6 +2261,7 @@ function updateEntryAfterSave(card){
   if(partners){ partners.forEach(pid=>paintScoreCell(round, seg, pid, State.entryHole)); }
   else { paintScoreCell(round, seg, State.entrySide, State.entryHole); }
   paintMatchRow(round, seg, State.entrySide);
+  paintOpponentRows(round, seg, State.entrySide);
   const tot=document.getElementById('entryTotal');
   if(tot) tot.innerHTML=entryTotalHTML(card, round, seg, State.entrySide);
   const eb=document.getElementById('enteredBy');
