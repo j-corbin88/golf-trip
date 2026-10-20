@@ -60,6 +60,8 @@ input,select{font-family:inherit;font-size:16px}
 .view.anim{animation:fade .25s ease}
 @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 .eyebrow{font-family:'Oswald';text-transform:uppercase;letter-spacing:.16em;font-size:11px;color:var(--gold);font-weight:600;margin-bottom:8px}
+/* crest gold is for dark backgrounds; on the cream cards/modals use a darker gold so it's readable */
+.card .eyebrow,.modal-b .eyebrow{color:#8a6410}
 .card{background:var(--paper);border-radius:14px;box-shadow:var(--shadow);padding:16px;margin-bottom:14px;position:relative;overflow:hidden}
 .card.tight{padding:12px}
 .muted{color:var(--text-dim);font-size:13px;line-height:1.5}
@@ -954,6 +956,16 @@ function displayName(pid){
   const clash=(State.config.players||[]).some(o=>o.id!==pid && (String(o.name).trim().split(/\s+/)[0]||'').toLowerCase()===first.toLowerCase());
   return (clash && parts.length>1) ? `${first} ${parts[parts.length-1][0]}.` : first;
 }
+// Team colors are chosen for backgrounds (Smitty's gold is the crest gold), so as TEXT on the cream cards they can be
+// unreadable. readableOn() darkens a color just enough to hit a 4.5:1 contrast ratio against the card background.
+function readableOn(hex, bg){
+  const parse=(h)=>{ h=String(h||'#999').replace('#',''); if(h.length===3) h=h.split('').map(c=>c+c).join(''); const n=parseInt(h,16)||0; return [(n>>16)&255,(n>>8)&255,n&255]; };
+  const lum=([r,g,b])=>{ const f=(v)=>{ v/=255; return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4); }; return .2126*f(r)+.7152*f(g)+.0722*f(b); };
+  const ratio=(a,b)=>{ const x=lum(a), y=lum(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); };
+  const back=parse(bg||'#F7F0DE'); let c=parse(hex);
+  for(let i=0;i<20 && ratio(c,back)<4.5;i++) c=c.map(v=>Math.round(v*.88));
+  return '#'+c.map(v=>v.toString(16).padStart(2,'0')).join('');
+}
 function tint(hex,a){ const h=(hex||'#999').replace('#',''); const s=h.length===3?h.split('').map(c=>c+c).join(''):h; const n=parseInt(s,16)||0; return `rgba(${(n>>16)&255},${(n>>8)&255},${n&255},${a})`; }
 function cmpHcp(a,b){ const ha=hcpOf(a.id), hb=hcpOf(b.id); return (ha==null?999:ha)-(hb==null?999:hb); }
 function cmpCapHcp(a,b){ const c=(b.isCaptain?1:0)-(a.isCaptain?1:0); return c!==0?c:cmpHcp(a,b); } // captain first, then handicap
@@ -1836,7 +1848,7 @@ function playerBoard(round){
       <div class="sc">${Math.round(r.net)}</div>
     </div>`;
   }).join('');
-  return `<div class="card"><div class="eyebrow" style="color:var(--gold)">${esc(round.name)} · Individual ${useHcp()?'net':'gross'}</div>${body}
+  return `<div class="card"><div class="eyebrow">${esc(round.name)} · Individual ${useHcp()?'net':'gross'}</div>${body}
     <div class="muted" style="margin-top:10px;font-size:11px">${useHcp()?'Net shown big, gross in the line below':'Gross shown'} · score-to-par at right · lowest wins.</div></div>`;
 }
 // Pre-trip countdown — shown above the leaderboard until kickoff, then gone for good.
@@ -1912,11 +1924,11 @@ function setRound(id){ State.activeRound=id; render(false); }
 
 function teamTotalBoard(round,seg){
   const c=courseOf(round);
-  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · Team Total${fmtInfo('teamtotal')} · ${esc(c?.name||'Course TBD')}</div>`;
+  const head=`<div class="eyebrow">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · Team Total${fmtInfo('teamtotal')} · ${esc(c?.name||'Course TBD')}</div>`;
   const ms=segMatches(seg);
   if(ms.length){
     const [TA,TB]=State.config.teams;
-    const matchHead=`<div class="match-head"><span style="color:${TA.color}">${esc(TA.name)}</span><span></span><span style="color:${TB.color}">${esc(TB.name)}</span></div>`;
+    const matchHead=`<div class="match-head"><span style="color:${readableOn(TA.color)}">${esc(TA.name)}</span><span></span><span style="color:${readableOn(TB.color)}">${esc(TB.name)}</span></div>`;
     const avs=(ids)=>`<span class="mav">${ids.map(id=>avatarOf(id)).join('')}</span>`;
     const nms=(ids)=>`<span class="mnames">${ids.map(id=>`<span>${esc(displayName(id))}</span>`).join('')}</span>`;
     const rows=ms.map(m=>{
@@ -1930,9 +1942,9 @@ function teamTotalBoard(round,seg){
       const statusMain = haveBoth ? `${Math.round(leftTotal)} – ${Math.round(rightTotal)}` : '—';
       const statusSub = agg.thru>0 ? (agg.final?'final':`thru ${agg.thru}`) : '';
       return `<div class="matchwrap"><div class="match">
-        <div class="mside ${leftLead?'win':''}" style="--tc:${TA.color};${leftLead?'background:'+tint(TA.color,.2):''}">${avs(left)}${nms(left)}</div>
+        <div class="mside ${leftLead?'win':''}" style="--tc:${readableOn(TA.color)};${leftLead?'background:'+tint(TA.color,.2):''}">${avs(left)}${nms(left)}</div>
         <div class="mstatus"><b>${statusMain}</b>${statusSub?`<span class="ssub">${esc(statusSub)}</span>`:''}</div>
-        <div class="mside b ${rightLead?'win':''}" style="--tc:${TB.color};${rightLead?'background:'+tint(TB.color,.2):''}">${nms(right)}${avs(right)}</div>
+        <div class="mside b ${rightLead?'win':''}" style="--tc:${readableOn(TB.color)};${rightLead?'background:'+tint(TB.color,.2):''}">${nms(right)}${avs(right)}</div>
       </div></div>`;
     }).join('');
     return `<div class="card">${head}${matchHead}${rows}
@@ -1947,8 +1959,8 @@ function teamTotalBoard(round,seg){
 function segMatchBoard(round,seg){
   const c=courseOf(round);
   const [TA,TB]=State.config.teams;
-  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')}</div>`;
-  const matchHead=`<div class="match-head"><span style="color:${TA.color}">${esc(TA.name)}</span><span></span><span style="color:${TB.color}">${esc(TB.name)}</span></div>`;
+  const head=`<div class="eyebrow">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')}</div>`;
+  const matchHead=`<div class="match-head"><span style="color:${readableOn(TA.color)}">${esc(TA.name)}</span><span></span><span style="color:${readableOn(TB.color)}">${esc(TB.name)}</span></div>`;
   const avs=(ids)=>`<span class="mav">${ids.map(id=>avatarOf(id)).join('')}</span>`;
   const nms=(ids)=>`<span class="mnames">${ids.map(id=>`<span>${esc(displayName(id))}</span>`).join('')}</span>`;
   const rows=segMatches(seg).map(m=>{
@@ -1962,9 +1974,9 @@ function segMatchBoard(round,seg){
     const sp=matchStatusParts(res);
     const mk=matchKeyOf(round.id, seg.id, m.id);
     return `<div class="matchwrap"><div class="match">
-      <div class="mside ${leftUp?'win':''}" style="--tc:${TA.color};${leftUp?'background:'+tint(TA.color,.2):''}">${avs(left)}${nms(left)}</div>
+      <div class="mside ${leftUp?'win':''}" style="--tc:${readableOn(TA.color)};${leftUp?'background:'+tint(TA.color,.2):''}">${avs(left)}${nms(left)}</div>
       <div class="mstatus">${res.played===0?'<span class="pre">—</span>':`<b>${esc(sp.main)}</b>${sp.sub?`<span class="ssub">${esc(sp.sub)}</span>`:''}`}</div>
-      <div class="mside b ${rightUp?'win':''}" style="--tc:${TB.color};${rightUp?'background:'+tint(TB.color,.2):''}">${nms(right)}${avs(right)}</div>
+      <div class="mside b ${rightUp?'win':''}" style="--tc:${readableOn(TB.color)};${rightUp?'background:'+tint(TB.color,.2):''}">${nms(right)}${avs(right)}</div>
     </div>${reactionBarHTML(mk)}</div>`;
   }).join('');
   return `<div class="card">${head}${rows?matchHead+rows:'<div class="muted">No matches set for this segment.</div>'}
@@ -1980,7 +1992,7 @@ function segLeaderboard(round,seg){
   }).filter(x=>x.gross!=null);
   sides.sort((a,b)=>(a.net??999)-(b.net??999));
   const segName = round.split ? seg.label : `${round.name}`;
-  const head=`<div class="eyebrow" style="color:var(--gold)">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')}</div>`;
+  const head=`<div class="eyebrow">${esc(round.name)}${round.split?' · '+esc(seg.label):''} · ${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')}</div>`;
   if(!sides.length){
     return `<div class="card">${head}<div class="empty" style="padding:16px"><div class="big">⛳</div><p class="muted" style="margin-top:4px">No scores in yet.</p></div></div>`;
   }
