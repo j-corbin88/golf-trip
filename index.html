@@ -125,9 +125,10 @@ input,select{font-family:inherit;font-size:16px}
 
 /* ---- Scorecard entry ---- */
 .side-tabs{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}
-.side-tabs button{display:flex;align-items:center;gap:6px;background:var(--paper);border:1px solid var(--line);padding:7px 11px 7px 7px;border-radius:999px;font-size:13px;font-weight:600;color:var(--text)}
+.side-tabs button{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);padding:7px 11px 7px 7px;border-radius:999px;font-size:13px;font-weight:600;color:var(--light)}
 .side-tabs button .av{width:24px;height:24px;border-radius:50%;background:var(--paper2);display:grid;place-items:center;font-size:14px}
-.side-tabs button.on{background:var(--ink);color:var(--light);border-color:var(--ink)}
+/* selected = gold (same as the round tabs). It used to be navy-on-navy, so the UNselected cream pill looked selected. */
+.side-tabs button.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
 
 .stepper{display:flex;align-items:center;justify-content:center;gap:18px;margin:8px 0 16px}
 .stepper .val{font-family:'Oswald';font-weight:700;font-size:64px;line-height:1;min-width:96px;text-align:center}
@@ -138,7 +139,7 @@ input,select{font-family:inherit;font-size:16px}
 .sc-table{display:grid;gap:4px;width:max-content}
 .sc-h{text-align:center;font-family:'Oswald';font-weight:600;font-size:13px;color:var(--text-dim);padding:2px 0}
 .sc-plabel{display:flex;align-items:center;font-size:10.5px;font-weight:700;line-height:1.15;color:var(--text-dim);padding-right:4px;overflow:hidden;position:sticky;left:0;z-index:2;background:var(--paper)}
-.sc-plabel>span{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden;overflow-wrap:anywhere}
+.sc-plabel>span{display:block;min-width:0;max-width:100%;white-space:normal;overflow-wrap:anywhere;word-break:break-word}
 .sc-plabel.mine{color:var(--text)}
 .sc-plabel.opp{color:#a23a30}
 .sc-opp{background:#e6ebf2;border-style:dashed;font-weight:600;color:var(--text)}
@@ -2072,7 +2073,7 @@ function viewEnter(){
   const side=editable.find(s=>s.id===State.entrySide);
   const card=State.cards[cardKey(round.id,seg.id,side.id)]||{holes:{}};
 
-  const sideTabs=`<div class="side-tabs">${editable.map(s=>`<button class="${s.id===State.entrySide?'on':''}" onclick="setSide('${s.id}')"><span class="av">${sideAvatar(s)}</span>${esc(sideLabel(s))}</button>`).join('')}</div>`;
+  const sideTabs=`<div class="side-tabs">${editable.map(s=>`<button data-side="${s.id}" class="${s.id===State.entrySide?'on':''}" onclick="setSide('${s.id}')"><span class="av">${sideAvatar(s)}</span>${esc(sideLabel(s))}</button>`).join('')}</div>`;
 
   const isIndiv = side.kind==='player';
   const si = c?.si||[];
@@ -2193,6 +2194,8 @@ function selectCell(hole, pid){
   if(oldBtn) oldBtn.classList.remove('on');
   const newBtn=document.getElementById('hole-'+hole+'-'+pid);
   if(newBtn) newBtn.classList.add('on');
+  // tapping a partner's box (Better Ball etc.) changes who you're entering for — keep the name tabs in step
+  document.querySelectorAll('.side-tabs button').forEach(b=>b.classList.toggle('on', b.dataset.side===String(pid)));
   if(prevHole!==hole){
     document.querySelectorAll('.sc-h').forEach(el=>el.classList.remove('on'));
     const {seg}=curEntryRefs(); const idx=hole-seg.start;
