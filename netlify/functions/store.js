@@ -14,7 +14,9 @@ export default async (req) => {
   };
   if (req.method === 'OPTIONS') return new Response('', { headers: cors });
 
-  const store = getStore('mb-golf-2026');
+  // strong consistency: a read right after a write must return that write (default 'eventual' can serve an older copy for a minute+,
+  // which made freshly-entered scores appear to revert on the next poll)
+  const store = getStore({ name: 'mb-golf-2026', consistency: 'strong' });
   const url = new URL(req.url);
 
   try {
@@ -50,7 +52,7 @@ export default async (req) => {
     return new Response(JSON.stringify({ ok: false, error: 'bad request' }), { status: 400, headers: cors });
   } catch (e) {
     return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: cors });
-  } of
+  }
 };
 
 export const config = { path: '/api/store' };

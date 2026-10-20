@@ -1291,6 +1291,11 @@ async function refresh(){
       const fresh=freshCards[k], local=merged[k];
       const protectedUntil=recentLocalWrite.get(k);
       const stillProtected = protectedUntil && now<protectedUntil;
+      // The server read can lag behind a write we just made (Netlify Blobs reads are eventually consistent and can
+      // serve an older copy for a minute or more). If OUR copy is newer than what the server just returned — and was
+      // saved recently — the server copy is the stale one, so keep ours. Compares the card's own updatedAt, not a timer.
+      const localNewer = !!local && (local.updatedAt||0) > ((fresh&&fresh.updatedAt)||0) && (now-(local.updatedAt||0)) < 5*60*1000;
+      if(localNewer){ merged[k]=local; return; }
       if(!local || !stillProtected){ merged[k]=fresh; return; }   // no recent edit here — trust the server (picks up other devices' corrections)
       // recently edited on THIS device — union the holes, local wins, so a poll can't erase something just entered
       merged[k] = { ...fresh, ...local, holes: {...(fresh.holes||{}), ...(local.holes||{})} };
