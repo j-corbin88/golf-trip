@@ -25,14 +25,17 @@
   --shadow:0 6px 20px rgba(0,0,0,.18);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;padding:0}
+/* App shell: the page itself never scrolls — only #scroller does. The header and bottom nav are ordinary flex children,
+   so iOS Safari's moving toolbars can't leave a fixed/sticky bar stranded mid-screen. */
+html,body{margin:0;padding:0;height:100%;overflow:hidden;overscroll-behavior:none}
 body{
   font-family:'Inter',system-ui,sans-serif;
   background:var(--ink);
   color:var(--text);
   -webkit-font-smoothing:antialiased;
-  padding-bottom:calc(72px + env(safe-area-inset-bottom));
+  height:100vh;height:100dvh;display:flex;flex-direction:column;
 }
+#scroller{flex:1 1 auto;min-height:0;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain}
 h1,h2,h3,.disp{font-family:'Oswald',sans-serif;letter-spacing:.01em;margin:0}
 .mono{font-family:'Roboto Mono',monospace;font-variant-numeric:tabular-nums}
 button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
@@ -41,7 +44,7 @@ input,select{font-family:inherit;font-size:16px}
 
 /* ---- App header ---- */
 .topbar{
-  position:sticky;top:0;z-index:20;
+  flex:none;position:relative;z-index:20;
   background:var(--ink);
   color:var(--light);
   padding:calc(10px + env(safe-area-inset-top)) 16px 10px;
@@ -174,7 +177,7 @@ input,select{font-family:inherit;font-size:16px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 
 /* ---- Bottom nav ---- */
-.nav{position:fixed;bottom:0;left:0;right:0;z-index:30;background:var(--ink);border-top:1px solid rgba(255,255,255,.08);display:flex;padding:8px 6px calc(8px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
+.nav{flex:none;position:relative;width:100%;box-sizing:border-box;z-index:30;background:var(--ink);border-top:1px solid rgba(255,255,255,.08);display:flex;padding:8px 6px calc(8px + env(safe-area-inset-bottom));max-width:640px;margin:0 auto}
 .nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:rgba(237,231,214,.5);font-size:10px;font-weight:600;letter-spacing:.03em;padding:4px 0}
 .nav button svg{width:22px;height:22px}
 .nav button.on{color:var(--gold)}
@@ -305,14 +308,14 @@ input,select{font-family:inherit;font-size:16px}
   </div>
 </div>
 
-<div class="screen" id="screen"></div>
+<div id="scroller"><div class="screen" id="screen"></div></div>
 
-<div id="demoBar" class="hidden" style="position:fixed;left:0;right:0;bottom:calc(72px + env(safe-area-inset-bottom));z-index:40;max-width:640px;margin:0 auto;background:#7a3ea8;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;font-size:13px;font-weight:600;box-shadow:0 -4px 14px rgba(0,0,0,.2)">
+<div id="demoBar" class="hidden" style="flex:none;width:100%;box-sizing:border-box;max-width:640px;margin:0 auto;background:#7a3ea8;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;font-size:13px;font-weight:600;box-shadow:0 -4px 14px rgba(0,0,0,.2)">
   <span>👁️ Demo preview — nothing is saved</span>
   <button onclick="clearDemo()" style="background:#fff;color:#7a3ea8;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px">Exit demo</button>
 </div>
 
-<div id="sandboxBar" class="hidden" style="position:fixed;left:0;right:0;bottom:calc(72px + env(safe-area-inset-bottom));z-index:40;max-width:640px;margin:0 auto;background:#0d6e4f;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;font-size:13px;font-weight:600;box-shadow:0 -4px 14px rgba(0,0,0,.2)">
+<div id="sandboxBar" class="hidden" style="flex:none;width:100%;box-sizing:border-box;max-width:640px;margin:0 auto;background:#0d6e4f;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;font-size:13px;font-weight:600;box-shadow:0 -4px 14px rgba(0,0,0,.2)">
   <span>🧪 Sandbox — separate space, real sync, nothing here counts</span>
   <button onclick="exitSandbox()" style="background:#fff;color:#0d6e4f;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px">Exit</button>
 </div>
@@ -1645,17 +1648,19 @@ function renderNav(){
   $('#nav').innerHTML=NAV.map(n=>`<button class="${State.view===n.id?'on':''}" onclick="go('${n.id}')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${n.icon}"/></svg>${n.label}</button>`).join('');
 }
-function go(view){ State.view=view; window.scrollTo(0,0); render(true); }
+const scrollerEl = ()=> document.getElementById('scroller');
+function go(view){ State.view=view; const sc=scrollerEl(); if(sc) sc.scrollTop=0; render(true); }
 
 function render(animate=false){
   updateMeChip(); renderNav();
   const s=$('#screen');
-  const y = animate ? 0 : window.scrollY;         // keep place unless navigating
+  const sc=scrollerEl();
+  const y = animate ? 0 : (sc?sc.scrollTop:0);    // keep place unless navigating
   const map={board:viewBoard,enter:viewEnter,rounds:viewRounds,roster:viewRoster,more:viewMore};
   s.innerHTML=`<div class="view${animate?' anim':''}">${(map[State.view]||viewBoard)()}</div>`;
   if(State.view==='enter') wireEntry();
   startCountdownTimer();
-  if(!animate){ window.scrollTo(0,y); requestAnimationFrame(()=>window.scrollTo(0,y)); }
+  if(sc){ if(animate) sc.scrollTop=0; else { sc.scrollTop=y; requestAnimationFrame(()=>{ sc.scrollTop=y; }); } }
 }
 
 /* ============================================================
