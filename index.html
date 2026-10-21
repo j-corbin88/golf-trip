@@ -31,7 +31,7 @@
   --red:#C0472B;
   --shadow:0 6px 20px rgba(0,0,0,.18);
 }
-*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;touch-action:manipulation}   /* no double-tap-to-zoom on rapid taps (+, Enter); pinch-zoom still works */
 /* App shell: the page itself never scrolls — only #scroller does. The header and bottom nav are ordinary flex children,
    so iOS Safari's moving toolbars can't leave a fixed/sticky bar stranded mid-screen. */
 html,body{margin:0;padding:0;height:100%;overflow:hidden;overscroll-behavior:none}
