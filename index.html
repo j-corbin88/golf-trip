@@ -2,6 +2,13 @@
 <html lang="en">
 <head>
 <meta name="format-detection" content="telephone=no, address=no">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#0B1E42">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="The Cup">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>The Cup · Myrtle Beach 2026</title>
@@ -448,7 +455,8 @@ const Store = (() => {
     },
     async set(key,value){
       if(typeof State!=='undefined' && State.demo) return null;   // demo preview must never touch the real store
-      lsSet(key,value); outbox.set(key,{op:'set',value}); saveOutbox(); notify();
+      if(!key.startsWith('log:')) lsSet(key,value);   // audit-trail records are write-only — no need to keep a local copy
+      outbox.set(key,{op:'set',value}); saveOutbox(); notify();
       return queuedWrite(key,'set',value);
     },
     async del(key){
@@ -2306,12 +2314,24 @@ function wireEntry(){
   if(selCell && typeof selCell.scrollIntoView==='function') selCell.scrollIntoView({inline:'center', block:'nearest'});
 }
 const recentLocalWrite=new Map();   // storage key -> timestamp until which local data should win over a poll fetch
+if('serviceWorker' in navigator && location.protocol.startsWith('http')){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }); }
+// Append-only audit trail: every score entry/clear is written as its own never-overwritten record (log:<round>:<time>-<rand>)
+// so a disputed score can always be traced to who entered what, and when. The app never reads these back.
+function logEntry(round, seg, sideId, hole, from, to){
+  try{
+    const ts=Date.now();
+    Store.set(`log:${round.id}:${String(ts).padStart(13,'0')}-${Math.random().toString(36).slice(2,6)}`,
+      {ts, at:new Date(ts).toISOString(), by:player(State.me)?.name||'—', byId:State.me||null, round:round.id, seg:seg?.id||null, side:sideId, hole, from:from??null, to:to??null, sandbox:!!State.sandbox});
+  }catch(e){}
+}
 async function saveHole(v){
   const {round,key}=curEntryRefs();
   if(round?.frozen) return; // locked
   const card=State.cards[key] || {holes:{}, enteredBy:'', updatedAt:0};
   if(!card.holes) card.holes={};
+  const prevVal=card.holes[State.entryHole];
   if(v==null) delete card.holes[State.entryHole]; else card.holes[State.entryHole]=v;
+  logEntry(round, curEntryRefs().seg, State.entrySide, State.entryHole, prevVal, v);
   card.enteredBy=player(State.me)?.name||'—';
   card.updatedAt=Date.now();
   State.cards[key]=card;
@@ -3274,6 +3294,8 @@ async function addCourse(){
 async function delCourse(id){ State.config.courses=State.config.courses.filter(c=>c.id!==id); await saveConfig(); renderAdmin(); }
 async function resetScores(){
   const keys=Object.keys(State.cards);
+  const ts=Date.now();   // keep a full copy of every card in the audit trail before wiping, so a mistaken reset is recoverable
+  await Store.set(`log:_admin:${String(ts).padStart(13,'0')}-reset`, {ts, at:new Date(ts).toISOString(), by:player(State.me)?.name||'admin', action:'reset-all-scores', cards:JSON.parse(JSON.stringify(State.cards))});
   for(const k of keys){ await Store.del(k); }
   State.cards={}; renderAdmin(); 
 }
