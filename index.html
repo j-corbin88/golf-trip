@@ -180,10 +180,23 @@ input,select{font-family:inherit;font-size:16px}
 .esum-nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .esum-row b{font-family:'Oswald';font-size:18px;font-weight:600;color:rgba(237,231,214,.7)}
 .esum-row b.lead{color:#fff}
-.quickrow{display:flex;gap:8px;margin-bottom:14px}
-.quickrow button{flex:1;padding:11px 4px;white-space:nowrap;border-radius:10px;background:var(--paper2);font-weight:600;font-size:13px;border:1px solid var(--line)}
-.quickrow button.enter{flex:1.5;background:var(--gold);color:var(--ink);border-color:var(--gold);font-size:15px;font-weight:700;transition:background .15s,color .15s}
+.quickrow{display:flex;gap:6px;margin-bottom:14px}
+.quickrow button{flex:1;padding:11px 2px;white-space:nowrap;border-radius:10px;background:var(--paper2);font-weight:600;font-size:12.5px;border:1px solid var(--line)}
+.quickrow button.enter{flex:1.35;background:var(--gold);color:var(--ink);border-color:var(--gold);font-size:15px;font-weight:700;transition:background .15s,color .15s}
 .quickrow button.enter.logged{background:#2f8f5b;color:#fff;border-color:#2f8f5b}   /* green = logged */
+.mullgrp{flex:1.25;display:flex;border-radius:10px;overflow:hidden;border:1px solid #e0b79a;background:#fbe9dc}
+.quickrow .mullgrp button{border:0;border-radius:0;background:transparent;padding:11px 0}
+.quickrow .mullgrp .mull{flex:1.6;font-size:15px;font-weight:700;color:var(--ink)}
+.quickrow .mullgrp .mull b{font-family:'Oswald';font-size:14px;margin-left:2px}
+.quickrow .mullgrp .mullminus{flex:1;font-size:16px;color:#a8431f;border-left:1px solid #e0b79a;visibility:hidden}
+.mullgrp.has{background:#f7c9a6;border-color:#e08a4f}
+.mullgrp.has .mullminus{visibility:visible}
+.mull-tag{position:absolute;top:1px;left:2px;font-size:10px;line-height:1;font-style:normal;font-family:'Inter';font-weight:700;color:#a8431f}
+.sc-score.on .mull-tag{color:#ffb98f}
+.mb-teams{display:flex;align-items:stretch;gap:10px;margin-bottom:12px}
+.mb-team{flex:1;border-radius:12px;padding:10px 12px;background:rgba(237,231,214,.07);border:1px solid rgba(237,231,214,.16);color:var(--light)}
+.mb-team .n{font-family:'Oswald';font-size:11px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
+.mb-team .v{font-family:'Oswald';font-weight:700;font-size:34px;line-height:1.1}
 .entered-by{text-align:center;font-size:11px;color:var(--text-dim);margin-top:10px}
 
 /* ---- Generic buttons/forms ---- */
@@ -1861,13 +1874,16 @@ function boardBodyHTML(){
     ${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setRound('${r.id}')">${esc(r.name)}${r.split?' · split':''}</button>`).join('')}
   </div>`:'';
   const toggle=rounds.length?`<div class="seg-toggle">
-    <button class="${State.boardMode!=='players'?'on':''}" onclick="setBoardMode('matches')">Matches</button>
+    <button class="${(State.boardMode!=='players'&&State.boardMode!=='mulls')?'on':''}" onclick="setBoardMode('matches')">Matches</button>
     <button class="${State.boardMode==='players'?'on':''}" onclick="setBoardMode('players')">Players</button>
+    <button class="${State.boardMode==='mulls'?'on':''}" onclick="setBoardMode('mulls')">🔥 Mulligans</button>
   </div>`:'';
   let body='';
   const active=cfg.rounds.find(r=>r.id===State.activeRound && roundLive(r)) || rounds[0];
   if(!rounds.length){
     body=`<div class="card"><div class="empty"><div class="big">🏁</div><b>No rounds live yet</b><p class="muted" style="margin-top:6px">Once the admin assigns a format to a day, standings show up here.</p></div></div>`;
+  } else if(State.boardMode==='mulls'){
+    return toggle+mullBoard(rounds);
   } else if(State.boardMode==='players'){
     body=playerBoard(active);
   } else if(active){
@@ -1877,6 +1893,38 @@ function boardBodyHTML(){
     ? `<div class="banner">Individual net across this round's holes. Scramble holes are team-only, so they don't appear here.</div>`
     : `<div class="banner">Match play: within each match the low handicap plays off scratch and the rest get the difference by stroke index. 1 point per match, ½ for a halve. Segments without pairings fall back to a provisional net total.</div>`;
   return tabs+toggle+body+banner;
+}
+function mullStats(rounds){
+  const players={};
+  rounds.forEach(r=>{ Object.entries(State.cards).forEach(([k,card])=>{
+    if(!k.startsWith(`card:${r.id}:`) || !card?.mull) return;
+    Object.values(card.mull).forEach(m=>Object.entries(m).forEach(([pid,n])=>{ const o=players[pid]||(players[pid]={total:0,by:{}}); o.total+=n; o.by[r.id]=(o.by[r.id]||0)+n; }));
+  }); });
+  return players;
+}
+function mullBoard(rounds){
+  const stats=mullStats(rounds), all=(State.config.players||[]);
+  const teams=(State.config.teams||[]).slice(0,2);
+  const tTot=(tid)=>all.filter(p=>p.teamId===tid).reduce((t,p)=>t+(stats[p.id]?.total||0),0);
+  const teamBox=teams.length===2?`<div class="mb-teams">${teams.map(t=>`<div class="mb-team"><div class="n"><span class="esum-dot" style="background:${t.color}"></span>${esc(t.name)}</div><div class="v">🔥 ${tTot(t.id)}</div></div>`).join('')}</div>`:'';
+  const ranked=all.filter(p=>stats[p.id]?.total>0).sort((a,b)=>stats[b.id].total-stats[a.id].total||String(a.name).localeCompare(b.name));
+  const dry=all.filter(p=>!(stats[p.id]?.total>0));
+  const rows=ranked.map((p,i)=>{
+    const t=team(p.teamId), s=stats[p.id];
+    const by=rounds.map(r=>s.by[r.id]?`${esc(r.name.replace(/^Round\s*/i,'R'))}: ${s.by[r.id]}`:'').filter(Boolean).join(' · ');
+    return `<div class="row">
+      <div style="width:18px;text-align:center;font-family:'Oswald';font-weight:700;color:var(--text-dim)">${i+1}</div>
+      <div class="teamdot" style="background:${t?.color||'#999'}"></div>
+      <div class="av" style="border-color:${t?.color||'transparent'}">${avatarOf(p.id)}</div>
+      <div class="nm"><b>${esc(p.name)}</b><span>${by}</span></div>
+      <div class="sc">🔥 ${s.total}</div>
+    </div>`;
+  }).join('');
+  const body=ranked.length
+    ? rows+(dry.length?`<div class="muted" style="margin-top:10px;font-size:12px">Still dry: ${dry.map(p=>esc(displayName(p.id))).join(', ')}</div>`:'')
+    : `<div class="empty" style="padding:16px"><div class="big">🔥</div><p class="muted" style="margin-top:4px">No mulligans yet. The Fireball is waiting.</p></div>`;
+  return `${teamBox}<div class="card"><div class="eyebrow">Fireball shots · whole weekend</div>${body}
+    <div class="muted" style="margin-top:10px;font-size:11px">One shot per mulligan, recorded on the Enter Score screen. Mulligans don't change anyone's score.</div></div>`;
 }
 function setBoardMode(m){ State.boardMode=m; render(false); }
 // Individual net leaderboard for a round (aggregates that round's individual-ball segments)
@@ -2085,6 +2133,11 @@ function segLeaderboard(round,seg){
    VIEW: ENTER SCORE
    ============================================================ */
 // Par cell: par plus the strokes this side gets on the hole as a small red number ("5" with red "2" = 2 strokes)
+/* ---------- Fireball mulligans ----------
+   card.mull = { [hole]: { [playerId]: shotsTaken } } — stored on the same card as the scores, so it syncs, merges and
+   survives offline exactly like a score. Several can be taken on one hole. */
+const mullCount=(card,h)=>{ const m=card?.mull?.[h]; return m?Object.values(m).reduce((a,b)=>a+b,0):0; };
+function mullTag(card,h){ const n=mullCount(card,h); return n>0 ? `<i class="mull-tag">🔥${n>1?n:''}</i>` : ''; }
 // A scored cell: gross in black, then the net in red parentheses ("5 (4)"). The gap is dropped for two-digit scores so they still fit the box.
 function netPair(gross, net){
   if(net==null) return `${gross}`;
@@ -2117,13 +2170,14 @@ function opponentSides(seg, sideId){
 }
 // read-only cell for an opponent's score on one hole: gross, with their net beside it (same convention as your own row)
 function oppCellInner(round, seg, oppId, h){
-  const v=State.cards[cardKey(round.id,seg.id,oppId)]?.holes?.[h];
+  const oc=State.cards[cardKey(round.id,seg.id,oppId)];
+  const v=oc?.holes?.[h], tag=mullTag(oc,h);
   if(v==null){   // not played yet — show the strokes they get on this hole as a small red number
     const n=useHcp() ? entryStrokesForHole(round,seg,oppId,h) : 0;
-    return n>0 ? `<span class="hint">${n}</span>` : '';
+    return (n>0 ? `<span class="hint">${n}</span>` : '')+tag;
   }
   const net=entryNetForHole(round,seg,oppId,h,v);
-  return netPair(v, (useHcp()&&net!==v)?net:null);
+  return netPair(v, (useHcp()&&net!==v)?net:null)+tag;
 }
 const oppCellHTML = (round,seg,oppId,h)=>`<div class="sc-box sc-opp" id="opp-${h}-${oppId}">${oppCellInner(round,seg,oppId,h)}</div>`;
 function paintOpponentRows(round, seg, sideId){
@@ -2174,7 +2228,7 @@ function viewEnter(){
     const v=c2.holes?.[h];
     const net=v!=null?entryNetForHole(round,seg,pid,h,v):null;
     const showNet = v!=null && useHcp() && net!==v;
-    return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="selectCell(${h},'${pid}')">${v!=null?netPair(v,showNet?net:null):strokeHint(round,seg,pid,h)}</button>`;
+    return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="selectCell(${h},'${pid}')">${v!=null?netPair(v,showNet?net:null):strokeHint(round,seg,pid,h)}${mullTag(c2,h)}</button>`;
   };
 
   // One table for every format. A sticky label column says what each row is: Hole / Par / my row(s) / the
@@ -2202,6 +2256,7 @@ function viewEnter(){
     ${partners?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">Tap either partner's box to enter for them — no need to switch tabs. Opponent rows are live and read-only; red numbers are the strokes they get.</div>`:(opps.length?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">The “vs” row is your opponent's live score — read-only. Red numbers are strokes they get.</div>`:'')}`;
 
   const shown=shownValFor(round,seg,State.entrySide,State.entryHole);
+  const mullN=mullCount(card,State.entryHole);
   const g=grossTotal(card), thru=holesPlayed(card);
   const enteredBy=card.enteredBy?`Last saved by ${esc(card.enteredBy)}`:'Not started';
   const strokeLine = strokeLineHTML(round, seg, side.id, State.entryHole, isIndiv);
@@ -2222,6 +2277,7 @@ function viewEnter(){
       <button onclick="prevHole()">‹ Back</button>
       <button onclick="clearHole()">Clear</button>
       <button class="enter${shown.saved!=null&&shown.saved===shown.v?' logged':''}" id="enterBtn" onclick="enterScore()">Enter</button>
+      <div class="mullgrp${mullN>0?' has':''}" id="mullGrp"><button class="mull" onclick="addMull()" title="Mulligan — one Fireball shot">🔥<b id="mullN">${mullN||''}</b></button><button class="mullminus" onclick="subMull()" title="Remove one">−</button></div>
       <button onclick="nextHole()">Next ›</button>
     </div>
     ${tableHTML}
@@ -2237,6 +2293,48 @@ function shownValFor(round, seg, sideId, hole){
   const par=courseOf(round)?.pars?.[hole-1]||4;
   const pend=(State.pend && State.pend.key===[round.id,seg.id,sideId,hole].join('|')) ? State.pend.v : undefined;
   return {saved, v: pend!==undefined ? pend : (saved ?? par)};
+}
+function paintMull(){
+  const {key}=curEntryRefs(); const n=mullCount(State.cards[key],State.entryHole);
+  const g=document.getElementById('mullGrp'); if(g) g.classList.toggle('has',n>0);
+  const b=document.getElementById('mullN'); if(b) b.textContent=n||'';
+}
+// Who drank? Individual cards: the card's own player. Team cards (foursomes/scramble): ask which teammate.
+function mullTakers(){
+  const {round,seg}=curEntryRefs();
+  if(FORMATS[seg.format]?.side==='group'){
+    const m=matchOfSide(seg,State.entrySide); if(!m) return [];
+    return m[entrySideOfMatch(seg,State.entrySide,m)]||[];
+  }
+  return [State.entrySide];
+}
+function addMull(){ const t=mullTakers(); if(t.length<=1) return changeMull(1,t[0]||State.entrySide); pickMullPlayer(1,t); }
+function subMull(){
+  const {key}=curEntryRefs(); const m=State.cards[key]?.mull?.[State.entryHole]||{};
+  const t=mullTakers().filter(id=>m[id]>0);
+  if(!t.length) return; if(t.length===1) return changeMull(-1,t[0]); pickMullPlayer(-1,t);
+}
+function pickMullPlayer(delta,ids){
+  const {key}=curEntryRefs(); const m=State.cards[key]?.mull?.[State.entryHole]||{};
+  showModal(`<div class="modal-h"><h2>${delta>0?'🔥 Who took the shot?':'Remove whose shot?'}</h2></div><div class="modal-b">
+    ${ids.map(id=>`<button class="btn" style="margin-bottom:8px" onclick="closeModal();changeMull(${delta},'${id}')">${esc(displayName(id))}${m[id]?` · ${m[id]} so far`:''}</button>`).join('')}
+    <button class="btn ghost" style="background:transparent;color:var(--text)" onclick="closeModal()">Cancel</button></div>`);
+}
+function changeMull(delta,pid){
+  const {round,seg,key}=curEntryRefs(); if(round?.frozen||!pid) return;
+  const card=State.cards[key]||{holes:{},enteredBy:'',updatedAt:0};
+  if(!card.holes) card.holes={};
+  const h=State.entryHole; card.mull=card.mull||{}; const m=card.mull[h]=card.mull[h]||{};
+  const before=m[pid]||0; const after=Math.max(0,before+delta);
+  if(after===before) return;
+  if(after) m[pid]=after; else delete m[pid];
+  if(!Object.keys(m).length) delete card.mull[h];
+  if(!Object.keys(card.mull).length) delete card.mull;
+  card.enteredBy=player(State.me)?.name||'—'; card.updatedAt=Date.now();
+  State.cards[key]=card; recentLocalWrite.set(key, Date.now()+20000);
+  try{ const ts=Date.now(); Store.set(`log:${round.id}:${String(ts).padStart(13,'0')}-${Math.random().toString(36).slice(2,6)}`,{ts, at:new Date(ts).toISOString(), by:player(State.me)?.name||'—', byId:State.me||null, round:round.id, seg:seg?.id||null, side:State.entrySide, hole:h, action:'mulligan', player:pid, from:before, to:after, sandbox:!!State.sandbox}); }catch(e){}
+  Store.set(key,card);
+  paintScoreCell(round,seg,State.entrySide,h); paintMull(); updateSyncNote();
 }
 function paintStepper(){
   const {round,seg}=curEntryRefs();
@@ -2303,7 +2401,7 @@ function selectCell(hole, pid){
   }
   const {round,seg,key}=curEntryRefs();
   const card=State.cards[key]||{holes:{}};
-  paintStepper();
+  paintStepper(); paintMull();
   const tot=document.getElementById('entryTotal');
   if(tot) tot.innerHTML=entryTotalHTML(card, round, seg, pid);
   const sl=document.getElementById('strokeLine');
@@ -2355,10 +2453,11 @@ function paintScoreCell(round, seg, sideId, hole){
   const v=State.cards[cardKey(round.id,seg.id,sideId)]?.holes?.[hole];
   btn.classList.toggle('on', hole===State.entryHole && sideId===State.entrySide);
   btn.classList.toggle('done', v!=null);
-  if(v==null){ btn.innerHTML=strokeHint(round,seg,sideId,hole); return; }
+  const tag=mullTag(State.cards[cardKey(round.id,seg.id,sideId)],hole);
+  if(v==null){ btn.innerHTML=strokeHint(round,seg,sideId,hole)+tag; return; }
   const net=entryNetForHole(round,seg,sideId,hole,v);
   const showNet = useHcp() && net!==v;
-  btn.innerHTML=netPair(v, showNet?net:null);
+  btn.innerHTML=netPair(v, showNet?net:null)+tag;
 }
 function paintMatchRow(round, seg, sideId){
   const row=document.getElementById('matchRow'); if(!row) return;
