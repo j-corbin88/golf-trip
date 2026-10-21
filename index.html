@@ -164,8 +164,10 @@ input,select{font-family:inherit;font-size:16px}
 .sc-score{background:var(--paper)}
 .sc-score.done{background:#dfe6dc}
 .sc-score.on{background:var(--ink);color:var(--light);border-color:var(--ink)}
-.sc-score.on sup{color:#ffb020}
-.sc-score sup{color:var(--gold);font-weight:700}
+.sc-score,.sc-opp{letter-spacing:-.02em}
+.sc-box .nt{color:var(--red);font-weight:700}
+.sc-box .nt.sp{margin-left:.28em}
+.sc-score.on .nt{color:#ff9b8f}
 .sc-match{font-size:10.5px;font-weight:800;letter-spacing:.02em;background:var(--paper)}
 .sc-match.win{background:#dff3df;color:#1f6b23}
 .sc-match.lose{background:#f7e3e1;color:#a23a30}
@@ -2083,6 +2085,11 @@ function segLeaderboard(round,seg){
    VIEW: ENTER SCORE
    ============================================================ */
 // Par cell: par plus the strokes this side gets on the hole as a small red number ("5" with red "2" = 2 strokes)
+// A scored cell: gross in black, then the net in red parentheses ("5 (4)"). The gap is dropped for two-digit scores so they still fit the box.
+function netPair(gross, net){
+  if(net==null) return `${gross}`;
+  return `<span class="g">${gross}</span><span class="nt${String(gross).length>1?'':' sp'}">(${net})</span>`;
+}
 function parCellInner(round, seg, sideId, h){
   const par=courseOf(round)?.pars?.[h-1];
   const sN=useHcp() ? entryStrokesForHole(round,seg,sideId,h) : 0;
@@ -2116,7 +2123,7 @@ function oppCellInner(round, seg, oppId, h){
     return n>0 ? `<span class="hint">${n}</span>` : '';
   }
   const net=entryNetForHole(round,seg,oppId,h,v);
-  return `${v}${(useHcp()&&net!==v)?`<sup>${net}</sup>`:''}`;
+  return netPair(v, (useHcp()&&net!==v)?net:null);
 }
 const oppCellHTML = (round,seg,oppId,h)=>`<div class="sc-box sc-opp" id="opp-${h}-${oppId}">${oppCellInner(round,seg,oppId,h)}</div>`;
 function paintOpponentRows(round, seg, sideId){
@@ -2167,7 +2174,7 @@ function viewEnter(){
     const v=c2.holes?.[h];
     const net=v!=null?entryNetForHole(round,seg,pid,h,v):null;
     const showNet = v!=null && useHcp() && net!==v;
-    return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="selectCell(${h},'${pid}')">${v!=null?v:strokeHint(round,seg,pid,h)}${showNet?`<sup>${net}</sup>`:''}</button>`;
+    return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="selectCell(${h},'${pid}')">${v!=null?netPair(v,showNet?net:null):strokeHint(round,seg,pid,h)}</button>`;
   };
 
   // One table for every format. A sticky label column says what each row is: Hole / Par / my row(s) / the
@@ -2351,7 +2358,7 @@ function paintScoreCell(round, seg, sideId, hole){
   if(v==null){ btn.innerHTML=strokeHint(round,seg,sideId,hole); return; }
   const net=entryNetForHole(round,seg,sideId,hole,v);
   const showNet = useHcp() && net!==v;
-  btn.innerHTML=`${v}${showNet?`<sup>${net}</sup>`:''}`;
+  btn.innerHTML=netPair(v, showNet?net:null);
 }
 function paintMatchRow(round, seg, sideId){
   const row=document.getElementById('matchRow'); if(!row) return;
