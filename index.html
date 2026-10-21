@@ -2158,8 +2158,10 @@ function segCols(seg){
 function totCellInner(round, seg, sid, c){
   const card=State.cards[cardKey(round.id,seg.id,sid)]; let g=0,n=0,cnt=0;
   for(let h=c.from; h<=c.to; h++){ const v=card?.holes?.[h]; if(v==null) continue; g+=v; n+=entryNetForHole(round,seg,sid,h,v); cnt++; }
-  if(!cnt) return '';
-  return netPair(g, (useHcp()&&n!==g)?n:null, 2);
+  let fire=0; for(let h=c.from; h<=c.to; h++) fire+=mullCount(card,h);
+  const tag=fire>0?`<i class="mull-tag">🔥${fire}</i>`:'';   // Fireball shots taken in this stretch
+  if(!cnt) return tag;
+  return netPair(g, (useHcp()&&n!==g)?n:null, 2)+tag;
 }
 function parTotInner(round, seg, sideId, c){
   const pars=courseOf(round)?.pars||[]; let par=0, stk=0;
@@ -2366,7 +2368,7 @@ function changeMull(delta,pid){
   State.cards[key]=card; recentLocalWrite.set(key, Date.now()+20000);
   try{ const ts=Date.now(); Store.set(`log:${round.id}:${String(ts).padStart(13,'0')}-${Math.random().toString(36).slice(2,6)}`,{ts, at:new Date(ts).toISOString(), by:player(State.me)?.name||'—', byId:State.me||null, round:round.id, seg:seg?.id||null, side:State.entrySide, hole:h, action:'mulligan', player:pid, from:before, to:after, sandbox:!!State.sandbox}); }catch(e){}
   Store.set(key,card);
-  paintScoreCell(round,seg,State.entrySide,h); paintMull(); updateSyncNote();
+  paintScoreCell(round,seg,State.entrySide,h); paintTotals(round,seg,State.entrySide); paintMull(); updateSyncNote();
 }
 function paintStepper(){
   const {round,seg}=curEntryRefs();
