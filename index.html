@@ -159,6 +159,7 @@ input,select{font-family:inherit;font-size:16px}
 .sc-box sup{font-size:9px;color:var(--red);font-weight:800;margin-left:1px;top:-.6em}
 .sc-par sup{color:var(--red)}
 .sc-score .hint{font-size:11px;font-weight:700;color:var(--red);opacity:.6}
+.sc-opp .hint{font-size:11px;font-weight:700;color:var(--red);opacity:.85}
 .sc-score.on .hint{color:#ff9b8f;opacity:1}
 .sc-score{background:var(--paper)}
 .sc-score.done{background:#dfe6dc}
@@ -2089,11 +2090,11 @@ function parCellInner(round, seg, sideId, h){
 }
 const parLabelText = (round,seg,sideId,partners)=> !useHcp() ? 'Par' : (partners ? `Par (${displayName(sideId)}'s strokes)` : 'Par (strokes)');
 // In partner formats the Par row can only show ONE player's strokes (whoever is selected), so each player's own
-// empty boxes also hint their strokes ("+2") until a score is entered.
+// empty boxes also hint their strokes (a red "2") until a score is entered.
 function strokeHint(round, seg, pid, h){
   if(!useHcp() || !partnerSideIds(seg, pid)) return '';
   const n=entryStrokesForHole(round,seg,pid,h);
-  return n>0 ? `<span class="hint">+${n}</span>` : '';
+  return n>0 ? `<span class="hint">${n}</span>` : '';
 }
 function paintParRow(round, seg, sideId){
   const partners=partnerSideIds(seg, sideId);
@@ -2110,7 +2111,10 @@ function opponentSides(seg, sideId){
 // read-only cell for an opponent's score on one hole: gross, with their net beside it (same convention as your own row)
 function oppCellInner(round, seg, oppId, h){
   const v=State.cards[cardKey(round.id,seg.id,oppId)]?.holes?.[h];
-  if(v==null) return '';
+  if(v==null){   // not played yet — show the strokes they get on this hole as a small red number
+    const n=useHcp() ? entryStrokesForHole(round,seg,oppId,h) : 0;
+    return n>0 ? `<span class="hint">${n}</span>` : '';
+  }
   const net=entryNetForHole(round,seg,oppId,h,v);
   return `${v}${(useHcp()&&net!==v)?`<sup>${net}</sup>`:''}`;
 }
@@ -2188,7 +2192,7 @@ function viewEnter(){
         ${rowHole}${rowPar}${myRows}${oppRows}<div id="matchRow" style="display:contents">${rowMatch}</div>
       </div>
     </div>
-    ${partners?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">Tap either partner's box to enter for them — no need to switch tabs. Opponent rows are live and read-only.</div>`:(opps.length?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">The “vs” row is your opponent's live score — read-only.</div>`:'')}`;
+    ${partners?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">Tap either partner's box to enter for them — no need to switch tabs. Opponent rows are live and read-only; red numbers are the strokes they get.</div>`:(opps.length?`<div class="muted" style="font-size:11px;margin:-6px 2px 12px">The “vs” row is your opponent's live score — read-only. Red numbers are strokes they get.</div>`:'')}`;
 
   const shown=shownValFor(round,seg,State.entrySide,State.entryHole);
   const g=grossTotal(card), thru=holesPlayed(card);
