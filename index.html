@@ -832,29 +832,40 @@ function reconcileTrip(){
 
 /* One-time: make Rounds 1 & 2 a Nassau (Front 9 + Back 9 + Total) so each day is worth 12 points
    (4 matches x 3 segments). Round 3 is already 12 (4 Team Total + 8 Singles). Keeps the round's
-   existing format and pairings, and skips any round that already has scores entered. Later admin
-   edits stick (flag). Same conversion as setSplitMode('nassau'). */
-async function migrateTwelvePointDays(){
+   existing format and pairings, and skips any round that already has real scores entered.
+   Handles a single "All 18" segment, or a Front/Back split where both halves share one format.
+   Tracked per round so later admin edits stick. Same conversion as setSplitMode('nassau'). */
+function roundHasScores(rid){
+  return Object.entries(State.cards||{}).some(([k,c])=>k.startsWith('card:'+rid+':') && c?.holes && Object.values(c.holes).some(v=>v!=null));
+}
+function migrateTwelvePointDays(){
   const cfg=State.config;
-  if(!cfg || cfg.settings?.twelvePtDaysSet) return false;
+  if(!cfg) return false;
+  cfg.settings=cfg.settings||{};
+  const done=cfg.settings.twelvePtDays=cfg.settings.twelvePtDays||{};
+  let changed=false;
   ['r1','r2'].forEach(rid=>{
+    if(done[rid]) return;
     const r=(cfg.rounds||[]).find(x=>x.id===rid);
-    if(!r || r.nassau) return;
+    if(!r) return;
+    if(r.nassau){ done[rid]=true; changed=true; return; }
     const segs=segsOf(r);
-    if(segs.length!==1 || !segs[0].format) return;
-    if(Object.keys(State.cards||{}).some(k=>k.startsWith('card:'+rid+':'))) return;
-    const fmt=segs[0].format, groups=segs[0].groups||[], matches=segs[0].matches||[];
-    const copy=()=>JSON.parse(JSON.stringify(matches));
+    const fmt=segs[0]?.format;
+    const ok = fmt && (segs.length===1 || (segs.length===2 && segs.every(sg=>!sg.agg && sg.format===fmt)));
+    if(!ok) return;
+    if(roundHasScores(rid)) return;
+    const groups=segs[0].groups||[];
+    const matches=(segs[0].matches&&segs[0].matches.length)?segs[0].matches:(segs[1]?.matches||[]);
+    const copy=(x)=>JSON.parse(JSON.stringify(x));
     r.split=true; r.nassau=true;
     r.segments=[
-      {id:'f', label:'Front 9', start:1,  end:9,  format:fmt, groups, matches:copy()},
-      {id:'b', label:'Back 9',  start:10, end:18, format:fmt, groups:JSON.parse(JSON.stringify(groups)), matches:copy()},
-      {id:'t', label:'Total',   start:1,  end:18, format:fmt, groups:JSON.parse(JSON.stringify(groups)), matches:copy(), agg:true},
+      {id:'f', label:'Front 9', start:1,  end:9,  format:fmt, groups:copy(groups), matches:copy(matches)},
+      {id:'b', label:'Back 9',  start:10, end:18, format:fmt, groups:copy(groups), matches:copy(matches)},
+      {id:'t', label:'Total',   start:1,  end:18, format:fmt, groups:copy(groups), matches:copy(matches), agg:true},
     ];
+    done[rid]=true; changed=true;
   });
-  cfg.settings=cfg.settings||{};
-  cfg.settings.twelvePtDaysSet=true;
-  return true;
+  return changed;
 }
 
 const State = {
@@ -1314,16 +1325,20 @@ function segTeamNet(round, seg){ // provisional fallback when no matches defined
   return out;
 }
 const segWeight = (seg)=> (seg?.weight!=null && seg.weight!=='') ? Number(seg.weight) : 1;
+// Matches a segment will have once paired: one per side-sized group on the smaller team (so the board can
+// show what's up for grabs before the pairings are set).
+function expectedMatches(fmt){
+  const T=State.config.teams||[], per=perSideFor(fmt);
+  let n=Math.min(teamRoster(T[0]?.id).length, teamRoster(T[1]?.id).length);
+  if(!n) n=Math.floor(((State.config.players||[]).length||16)/2);
+  return Math.floor(n/per);
+}
 function pointsAvailable(){
   let n=0;
   (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>segsOf(r).forEach(seg=>{
     if(!seg.format) return;
     const w=segWeight(seg);
-    if(FORMATS[seg.format]?.scoring==='aggregate'){
-      const ms=segMatches(seg);
-      n += ms.length*w;
-    }
-    else { n += segMatches(seg).length*w; }
+    n += (segMatches(seg).length || expectedMatches(seg.format))*w;
   }));
   return n;
 }
@@ -1418,7 +1433,7 @@ async function loadAll(){
   const sz=await Store.list('sizes:');
   Object.entries(sz).forEach(([k,v])=>{ if(v) State.sizes[k.split(':')[1]]=v; });
   State.cards=await Store.list('card:');
-  if(await migrateTwelvePointDays()){ await Store.set('config',State.config); }
+  if(migrateTwelvePointDays()){ await saveConfig(); }
   State.me=Device.get('me');
   if(!State.activeRound) State.activeRound=(cfg.rounds.find(r=>roundLive(r))||cfg.rounds[0])?.id;
   document.getElementById('tripTitle').textContent=cfg.settings.tripName||'The Cup';
