@@ -2523,7 +2523,7 @@ function wireEntry(){
   const setPend=(v)=>{ const r=curEntryRefs(); State.pend={key:[r.round.id,r.seg.id,State.entrySide,State.entryHole].join('|'), v}; paintStepper(); };
   if(plus) plus.onclick=()=>setPend(Math.min(15,shownNow()+1));
   if(minus) minus.onclick=()=>setPend(Math.max(1,shownNow()-1));
-  window.enterScore=()=>{ const v=shownNow(); State.pend=null; saveHole(v); };   // Enter logs the number on screen (par if untouched)
+  window.enterScore=()=>{ const v=shownNow(); const lim=maxScoreLimit(); if(lim && v>lim.max){ warnOverMax(v,lim); return; } State.pend=null; saveHole(v); };   // Enter logs the number on screen (par if untouched)
   window.clearHole=()=>{ State.pend=null; saveHole(null); };
   const selCell=document.getElementById('hole-'+State.entryHole+'-'+State.entrySide);
   if(selCell && typeof selCell.scrollIntoView==='function') selCell.scrollIntoView({inline:'center', block:'nearest'});
@@ -2561,6 +2561,24 @@ function logEntry(round, seg, sideId, hole, from, to){
       {ts, at:new Date(ts).toISOString(), by:player(State.me)?.name||'—', byId:State.me||null, round:round.id, seg:seg?.id||null, side:sideId, hole, from:from??null, to:to??null, sandbox:!!State.sandbox});
   }catch(e){}
 }
+/* Max score per hole (gross): par + N (default par + 1). Admin can change N or switch it off. Over the max -> a warning popup. */
+function maxScoreLimit(){
+  const st=State.config?.settings||{}; if(st.maxOverOn===false) return null;
+  const r=curEntryRefs(); const par=courseOf(r.round)?.pars?.[State.entryHole-1]; if(!par) return null;
+  const over=Number.isFinite(Number(st.maxOver))&&st.maxOver!==''&&st.maxOver!=null ? Number(st.maxOver) : 1;
+  return {par, over, max:par+over};
+}
+function warnOverMax(v, lim){
+  showModal(`<div class="modal-h"><h2>⚠️ Over the max score</h2><p class="muted" style="margin:4px 0 0">The max here is <b>par + ${lim.over} = ${lim.max}</b> (par ${lim.par}). You're about to record <b>${v}</b>.</p></div>
+    <div class="modal-b">
+      <button class="btn gold" onclick="overMaxChoice(${lim.max})">Record the max (${lim.max})</button>
+      <button class="btn ghost" style="margin-top:8px" onclick="overMaxChoice(${v})">Keep ${v} anyway</button>
+      <button class="btn ghost" style="margin-top:8px" onclick="closeModal()">Cancel — go back</button>
+    </div>`);
+}
+function overMaxChoice(v){ closeModal(); State.pend=null; saveHole(v); }
+async function setMaxOverOn(on){ State.config.settings.maxOverOn=!!on; await saveConfig(); renderAdmin(); }
+async function setMaxOver(v){ const n=Math.max(0,Math.min(10,Math.round(Number(v)))); State.config.settings.maxOver=Number.isFinite(n)?n:1; await saveConfig(); renderAdmin(); }
 async function saveHole(v){
   const {round,key}=curEntryRefs();
   if(round?.frozen) return; // locked
@@ -3146,6 +3164,7 @@ function renderAdminGuide(){
 
       ${sec('Getting set up',[
         ['Roster, teams &amp; handicaps','Add each player and their handicap index under <b>Players &amp; handicaps</b>. Players can also set their own index when they sign in on their phone — until you lock it (below). Name your two teams and pick their colors up top.'],
+        ['Max score per hole','Gross max is <b>par + 1</b> by default. If someone enters more, a popup warns them and offers to record the max instead (or keep it). Change the number, or switch it off, in the Control Room next to Lock handicaps.'],
         ['Lock handicaps','Once everyone\u2019s number is right, flip <b>Lock handicaps</b> so players can\u2019t change their index the night before. You can still edit anyone\u2019s.'],
         ['Courses &amp; tees','Each course has selectable tees — pick the ones you\u2019re actually playing and the rating/slope (and everyone\u2019s course handicap) update automatically.'],
       ])}
@@ -3297,6 +3316,7 @@ function renderAdmin(){
       <label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:12px;color:${cfg.settings.hcpLocked?'var(--red)':'inherit'}">
         <input type="checkbox" ${cfg.settings.hcpLocked?'checked':''} onchange="setHcpLocked(this.checked)" style="width:20px;height:20px"/> 🔒 Lock handicaps — players can't change their index (you still can)
       </label>
+      ${maxScoreAdminHTML(cfg)}
       <button class="btn ghost sm" style="width:100%;margin-bottom:12px" onclick="renderStrokeGrid()">🎯 Stroke sheet &amp; index — tweak who strokes where</button>
       <div class="field" style="margin:0 0 12px">
         <label>Scramble handicap</label>
@@ -3331,6 +3351,12 @@ function renderAdmin(){
 }
 async function setScrambleHcp(v){ State.config.settings.scrambleHcp=v; await saveConfig(); renderAdmin(); }
 async function setUseHandicaps(on){ State.config.settings.useHandicaps=on; await saveConfig(); renderAdmin(); }
+function maxScoreAdminHTML(cfg){
+  const on=cfg.settings.maxOverOn!==false, over=(cfg.settings.maxOver!=null&&cfg.settings.maxOver!=='')?cfg.settings.maxOver:1;
+  return `<label style="display:flex;align-items:center;gap:9px;font-size:14px;font-weight:600;margin-bottom:12px;flex-wrap:wrap">
+    <input type="checkbox" ${on?'checked':''} onchange="setMaxOverOn(this.checked)" style="width:20px;height:20px"/> ⛳ Max score per hole (gross) — warn if over par +
+    <input type="number" min="0" max="10" step="1" inputmode="numeric" value="${over}" ${on?'':'disabled'} onchange="setMaxOver(this.value)" style="width:58px;text-align:center"/></label>`;
+}
 async function setHcpLocked(on){ State.config.settings.hcpLocked=on; await saveConfig(); renderAdmin(); }
 async function setAllowance(fmt,v){ State.config.settings.allowance=State.config.settings.allowance||{}; State.config.settings.allowance[fmt]=(v===''?100:Number(v)); await saveConfig(); }
 async function setCourseTee(cid,name){ const c=course(cid); const t=(c?.tees||[]).find(x=>x.name===name); if(c&&t){ c.tee=name; c.rating=t.rating; c.slope=t.slope; } await saveConfig(); renderAdmin(); }
