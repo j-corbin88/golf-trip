@@ -795,6 +795,18 @@ function reconcileTrip(){
   (cfg.players||[]).forEach(p=>{
     if((p.hcp==null || p.hcp==='') && HANDICAP_PLAN[p.id]!=null){ p.hcp=HANDICAP_PLAN[p.id]; changed=true; }
   });
+  // Round 1 Better Ball pairings from the commissioner's sheet (side a = Team Smitty, side b = Team Devin).
+  // One-time: only fills Round 1 if it has no matches yet, then sets a flag so later admin edits/clears stick.
+  const r1=(cfg.rounds||[]).find(x=>x.id==='r1'), r1s=r1&&(r1.segments||[])[0];
+  if(r1s && !cfg.settings.r1PairingsSet && !(r1s.matches||[]).length && (cfg.players||[]).some(p=>p.id==='p13')){
+    r1s.matches=[
+      {id:'r1m1', a:['p13','p10'], b:['p7','p6']},    // Bob + Justin  v  Juls + Jordan
+      {id:'r1m2', a:['p2','p5'],  b:['p11','p9']},    // John + Eby    v  Greenwell + Patrick
+      {id:'r1m3', a:['p3','p1'],  b:['p0','p15']},    // Hillis + Smitty v Noto + Reich
+      {id:'r1m4', a:['p14','p8'], b:['p4','p12']},    // Joe + Brett   v  Devin + Nick
+    ];
+    cfg.settings.r1PairingsSet=true; changed=true;
+  }
   return changed;
 }
 
