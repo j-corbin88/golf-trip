@@ -815,6 +815,9 @@ function reconcileTrip(){
     ];
     cfg.settings.r1PairingsSet=true; changed=true;
   }
+  // One-time team rename requested by the commissioner (Team Devin -> Pawley's Patrol); later admin renames stick.
+  const t2=(cfg.teams||[]).find(t=>t.id==='t2');
+  if(t2 && !cfg.settings.t2Renamed){ if(t2.name==='Team Devin') t2.name="Pawley's Patrol"; cfg.settings.t2Renamed=true; changed=true; }
   return changed;
 }
 
