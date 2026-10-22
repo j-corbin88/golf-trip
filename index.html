@@ -82,7 +82,9 @@ input,select{font-family:inherit;font-size:16px}
 .cup-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px}
 .cup-team{display:flex;flex-direction:column;gap:2px}
 .cup-team.right{align-items:flex-end;text-align:right}
-.cup-team .nm{font-family:'Oswald';font-weight:600;text-transform:uppercase;font-size:14px;letter-spacing:.03em}
+.cup-team .nm{font-family:'Oswald';font-weight:600;text-transform:uppercase;font-size:14px;letter-spacing:.03em;display:flex;align-items:center;gap:7px}
+.cup-team.right .nm{justify-content:flex-end}
+.tlogo{border-radius:50%;object-fit:cover;border:2px solid;flex:none;background:#fff;display:block}
 .cup-team .pts{font-family:'Oswald';font-weight:700;font-size:40px;line-height:.9}
 .cup-team .sub{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:rgba(237,231,214,.55)}
 .meter{height:16px;border-radius:999px;background:rgba(255,255,255,.12);position:relative;overflow:hidden;display:flex}
@@ -819,6 +821,7 @@ function reconcileTrip(){
   }
   // One-time team rename requested by the commissioner (Team Devin -> Pawley's Patrol); later admin renames stick.
   const t2=(cfg.teams||[]).find(t=>t.id==='t2');
+  if(t2 && !cfg.settings.t2Logo){ if(!t2.logo) t2.logo='/icons/pawleys-patrol.jpg'; cfg.settings.t2Logo=true; changed=true; }
   if(t2 && !cfg.settings.t2Renamed){ if(t2.name==='Team Devin') t2.name="Pawley's Patrol"; cfg.settings.t2Renamed=true; changed=true; }
   return changed;
 }
@@ -1827,12 +1830,14 @@ function boardStats(){
   let lp=(pA/total)*100; if(pA===0&&pB===0) lp=50;
   return {A,B,pA,pB,lp};
 }
+// optional team logo (team.logo = image path), drawn as a round badge ringed in the team color
+const teamLogo=(t,px)=> t&&t.logo ? `<img class="tlogo" src="${esc(t.logo)}" alt="" width="${px}" height="${px}" style="width:${px}px;height:${px}px;border-color:${t.color}">` : '';
 function cupHTML(){
   const {A,B,pA,pB,lp}=boardStats();
   return `<div class="cup">
     <div class="cup-head">
-      <div class="cup-team"><span class="nm" style="color:${A.color}">${esc(A.name)}</span><span class="pts" id="ptsL">${fmtPts(pA)}</span><span class="sub">Projected</span></div>
-      <div class="cup-team right"><span class="nm" style="color:${B.color}">${esc(B.name)}</span><span class="pts" id="ptsR">${fmtPts(pB)}</span><span class="sub">Projected</span></div>
+      <div class="cup-team"><span class="nm" style="color:${A.color}">${teamLogo(A,30)}<span>${esc(A.name)}</span></span><span class="pts" id="ptsL">${fmtPts(pA)}</span><span class="sub">Projected</span></div>
+      <div class="cup-team right"><span class="nm" style="color:${B.color}">${teamLogo(B,30)}<span>${esc(B.name)}</span></span><span class="pts" id="ptsR">${fmtPts(pB)}</span><span class="sub">Projected</span></div>
     </div>
     <div class="meter"><div class="fillL" id="fillL" style="width:${lp}%;background:${A.color}"></div><div class="fillR" id="fillR" style="width:${100-lp}%;background:${B.color}"></div><div class="mid"></div></div>
     <div class="cup-foot" id="cupFoot">${cupFootText()}</div>
@@ -2714,7 +2719,7 @@ function viewRoster(){
     }).join('') || '<div class="muted">No players assigned</div>';
     return `<div class="card">
       <div style="display:flex;align-items:center;gap:9px;margin-bottom:6px">
-        <span class="teamdot" style="width:12px;height:12px;background:${t.color}"></span>
+        ${t.logo?teamLogo(t,38):`<span class="teamdot" style="width:12px;height:12px;background:${t.color}"></span>`}
         <h3 style="font-size:19px;text-transform:uppercase">${esc(t.name)}</h3>
         <span class="muted" style="margin-left:auto">${roster.length} players</span>
       </div>${rows}</div>`;
