@@ -720,10 +720,14 @@ const DEFAULT_CONFIG = () => ({
      pars:[4,5,3,4,4,3,4,5,3,5,3,4,4,4,4,4,3,4], si:[12,8,14,6,2,16,4,10,18,15,13,9,5,7,3,1,17,11]},
   ],
   rounds:[
-    {id:'r1', dateLabel:'Thu · Oct 22', teeTime:'1:06 PM', name:'Round 1', courseId:'c1', split:false,
-     segments:[{id:'f', label:'All 18', start:1, end:18, format:'foursomes', matches:[]}]},
-    {id:'r2', dateLabel:'Fri · Oct 23', teeTime:'9:12 AM', name:'Round 2', courseId:'c2', split:false,
-     segments:[{id:'f', label:'All 18', start:1, end:18, format:'scramble', matches:[]}]},
+    {id:'r1', dateLabel:'Thu · Oct 22', teeTime:'1:06 PM', name:'Round 1', courseId:'c1', split:true, nassau:true,
+     segments:[{id:'f', label:'Front 9', start:1, end:9, format:'foursomes', matches:[]},
+               {id:'b', label:'Back 9', start:10, end:18, format:'foursomes', matches:[]},
+               {id:'t', label:'Total', start:1, end:18, format:'foursomes', matches:[], agg:true}]},
+    {id:'r2', dateLabel:'Fri · Oct 23', teeTime:'9:12 AM', name:'Round 2', courseId:'c2', split:true, nassau:true,
+     segments:[{id:'f', label:'Front 9', start:1, end:9, format:'scramble', matches:[]},
+               {id:'b', label:'Back 9', start:10, end:18, format:'scramble', matches:[]},
+               {id:'t', label:'Total', start:1, end:18, format:'scramble', matches:[], agg:true}]},
     {id:'r3', dateLabel:'Sat · Oct 24', teeTime:'8:24 AM', name:'Round 3', courseId:'c3', split:true,
      segments:[{id:'f', label:'Front 9', start:1, end:9, format:'teamtotal', matches:[]},
                {id:'b', label:'Back 9', start:10, end:18, format:'singles', matches:[]}]},
@@ -824,6 +828,33 @@ function reconcileTrip(){
   if(t2 && !cfg.settings.t2Logo){ if(!t2.logo) t2.logo='/icons/pawleys-patrol.jpg'; cfg.settings.t2Logo=true; changed=true; }
   if(t2 && !cfg.settings.t2Renamed){ if(t2.name==='Team Devin') t2.name="Pawley's Patrol"; cfg.settings.t2Renamed=true; changed=true; }
   return changed;
+}
+
+/* One-time: make Rounds 1 & 2 a Nassau (Front 9 + Back 9 + Total) so each day is worth 12 points
+   (4 matches x 3 segments). Round 3 is already 12 (4 Team Total + 8 Singles). Keeps the round's
+   existing format and pairings, and skips any round that already has scores entered. Later admin
+   edits stick (flag). Same conversion as setSplitMode('nassau'). */
+async function migrateTwelvePointDays(){
+  const cfg=State.config;
+  if(!cfg || cfg.settings?.twelvePtDaysSet) return false;
+  ['r1','r2'].forEach(rid=>{
+    const r=(cfg.rounds||[]).find(x=>x.id===rid);
+    if(!r || r.nassau) return;
+    const segs=segsOf(r);
+    if(segs.length!==1 || !segs[0].format) return;
+    if(Object.keys(State.cards||{}).some(k=>k.startsWith('card:'+rid+':'))) return;
+    const fmt=segs[0].format, groups=segs[0].groups||[], matches=segs[0].matches||[];
+    const copy=()=>JSON.parse(JSON.stringify(matches));
+    r.split=true; r.nassau=true;
+    r.segments=[
+      {id:'f', label:'Front 9', start:1,  end:9,  format:fmt, groups, matches:copy()},
+      {id:'b', label:'Back 9',  start:10, end:18, format:fmt, groups:JSON.parse(JSON.stringify(groups)), matches:copy()},
+      {id:'t', label:'Total',   start:1,  end:18, format:fmt, groups:JSON.parse(JSON.stringify(groups)), matches:copy(), agg:true},
+    ];
+  });
+  cfg.settings=cfg.settings||{};
+  cfg.settings.twelvePtDaysSet=true;
+  return true;
 }
 
 const State = {
@@ -1387,6 +1418,7 @@ async function loadAll(){
   const sz=await Store.list('sizes:');
   Object.entries(sz).forEach(([k,v])=>{ if(v) State.sizes[k.split(':')[1]]=v; });
   State.cards=await Store.list('card:');
+  if(await migrateTwelvePointDays()){ await Store.set('config',State.config); }
   State.me=Device.get('me');
   if(!State.activeRound) State.activeRound=(cfg.rounds.find(r=>roundLive(r))||cfg.rounds[0])?.id;
   document.getElementById('tripTitle').textContent=cfg.settings.tripName||'The Cup';
@@ -3213,7 +3245,7 @@ function renderAdminGuide(){
       ${sec('Scoring controls',[
         ['Handicaps on/off','The <b>Use handicaps</b> switch turns the whole event gross with one tap. Off = everything is gross and the stroke sheet is ignored.'],
         ['Allowance &amp; scramble handicap','Set the % of handicap each format uses (singles 100, four-ball 85 are standard), and how a scramble side\u2019s handicap is figured (low ball, USGA 35/15, average, or scratch).'],
-        ['Points per match','Each match is worth 1 point (½ for a halve). Bump a segment\u2019s <b>pts/match</b> to make a day worth more.'],
+        ['Points per match','Each match is worth 1 point (½ for a halve). Bump a segment\u2019s <b>pts/match</b> to make a day worth more. Every day is built to be worth <b>12 points</b>: Rounds 1 &amp; 2 are Nassau (Front 9, Back 9, Total — 4 points each across 4 matches), and the final day is Front 9 Team Total (4) + Back 9 Singles (8).'],
         ['Stroke sheet &amp; index','The heart of scoring. <b>Stroke index</b> sets which hole ranks 1–18 hardest. The <b>grid</b> shows every player\u2019s dots per hole — pre-filled from their handicap, tap any cell to override (auto → 0 → 1 → 2 → 3). Those dots are the single source of truth: net = gross minus dots, and in match play low net wins the hole.'],
       ])}
 
