@@ -140,7 +140,10 @@ input,select{font-family:inherit;font-size:16px}
 /* selected = gold (same as the round tabs). It used to be navy-on-navy, so the UNselected cream pill looked selected. */
 .side-tabs button.on{background:var(--gold);color:var(--ink);border-color:var(--gold)}
 /* "Other cards" dropdown: a pill like the player tabs, but a native select so phones get their own picker */
-.cardpick{-webkit-appearance:none;appearance:none;width:66px;flex:none;max-width:100%;background:rgba(255,255,255,.06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23F1EAD8'/%3E%3C/svg%3E") no-repeat right 9px center;border:1px dashed rgba(255,255,255,.35);padding:7px 24px 7px 12px;border-radius:999px;font-size:15px!important;font-weight:600;font-size:13px;line-height:1.2;font-family:inherit;color:var(--light)}
+.cardpick{-webkit-appearance:none;appearance:none;width:52px;flex:none;max-width:100%;background:rgba(255,255,255,.06) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23F1EAD8'/%3E%3C/svg%3E") no-repeat right 8px center;border:1px dashed rgba(255,255,255,.35);padding:7px 18px 7px 9px;border-radius:999px;font-size:15px!important;font-weight:600;font-size:13px;line-height:1.2;font-family:inherit;color:var(--light)}
+.side-tabs.nw{flex-wrap:nowrap}                       /* 1-3 tabs + the picker stay on ONE row; long names shrink with an ellipsis */
+.side-tabs.nw button{min-width:0;flex:0 1 auto}
+.side-tabs.nw button .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .cardview .cv-sub{font-size:12px;color:var(--text-dim);margin:3px 0 0}
 .cardview .cv-stat{display:inline-block;margin-top:8px;font-weight:700;font-size:13px}
 .cardview .cv-stat.win{color:var(--green)}.cardview .cv-stat.lose{color:var(--red)}
@@ -2313,7 +2316,7 @@ function viewEnter(){
   const side=editable.find(s=>s.id===State.entrySide);
   const card=State.cards[cardKey(round.id,seg.id,side.id)]||{holes:{}};
 
-  const sideTabs=`<div class="side-tabs">${editable.map(s=>`<button data-side="${s.id}" class="${s.id===State.entrySide?'on':''}" onclick="setSide('${s.id}')"><span class="av">${sideAvatar(s)}</span>${esc(sideLabel(s))}</button>`).join('')}${cardPickerHTML(seg)}</div>`;
+  const sideTabs=`<div class="side-tabs${editable.length<=3?' nw':''}">${editable.map(s=>`<button data-side="${s.id}" class="${s.id===State.entrySide?'on':''}" onclick="setSide('${s.id}')"><span class="av">${sideAvatar(s)}</span><span class="nm">${esc(sideLabel(s))}</span></button>`).join('')}${cardPickerHTML(seg)}</div>`;
 
   const isIndiv = side.kind==='player';
   const si = c?.si||[];
