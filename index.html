@@ -1082,7 +1082,13 @@ function sideCH(ids, c, fmt){
    sides picked up the hole is halved. Engine trick: a picked-up net is stored as PK + net, so any real net is lower; cmpVals() treats two PK values as equal. */
 const PK=1000;
 const isPick=(card,h)=>!!card?.pick?.[h];
-function cmpVals(a,b){ if(a>=PK && b>=PK) return 0; return a<b?-1:(a>b?1:0); }   // -1: a wins the hole, 1: b wins, 0: halved
+function cmpVals(a,b){   // -1: a wins the hole, 1: b wins, 0: halved
+  const ap=a>=PK, bp=b>=PK;
+  if(ap && bp) return 0;                                  // both picked up: push
+  if(ap) return b<=a-PK ? 1 : 0;                          // a picked up: b's real net wins only if it's EQUAL or LOWER than a's net; otherwise a can't win, so it's a push
+  if(bp) return a<=b-PK ? -1 : 0;
+  return a<b?-1:(a>b?1:0);
+}
 function matchValFns(round, seg, match){
   const c=courseOf(round); const si=c?.si||[]; const fmt=seg.format;
   const isGroup=FORMATS[fmt]?.side==='group';
@@ -3182,7 +3188,7 @@ function renderAdminGuide(){
 
       ${sec('Getting set up',[
         ['Roster, teams &amp; handicaps','Add each player and their handicap index under <b>Players &amp; handicaps</b>. Players can also set their own index when they sign in on their phone — until you lock it (below). Name your two teams and pick their colors up top.'],
-        ['Max score per hole','Gross max is <b>2 × par + 1</b> by default (par 4 = 9). At the max a popup asks <b>holed out or picked up</b>; past the max it is always a pick-up (recorded as the max, marked <b>P</b>). A pick-up can never win a hole — any real score beats it, and if both sides picked up the hole is halved. Change the numbers, or switch it off, in the Control Room next to Lock handicaps.'],
+        ['Max score per hole','Gross max is <b>2 × par + 1</b> by default (par 4 = 9). At the max a popup asks <b>holed out or picked up</b>; past the max it is always a pick-up (recorded as the max, marked <b>P</b>). A pick-up can never win a hole: a real score beats it only if that net is equal to or lower than the pick-up\u2019s net (otherwise the hole is halved), and if both sides picked up the hole is halved. Change the numbers, or switch it off, in the Control Room next to Lock handicaps.'],
         ['Lock handicaps','Once everyone\u2019s number is right, flip <b>Lock handicaps</b> so players can\u2019t change their index the night before. You can still edit anyone\u2019s.'],
         ['Courses &amp; tees','Each course has selectable tees — pick the ones you\u2019re actually playing and the rating/slope (and everyone\u2019s course handicap) update automatically.'],
       ])}
