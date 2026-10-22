@@ -1303,6 +1303,27 @@ function matchProgressionForSide(round, seg, sideId){
   }
   return out;
 }
+// Match-row cell for an OUT / IN / TOT column: OUT = standing after the front nine, IN = the back nine on its own, TOT = the whole match.
+function matchColCell(round, seg, sideId, c){
+  // Nassau rounds: OUT = the front-nine bet, IN = the back-nine bet, TOT = the Total bet (each its own segment). Otherwise it's one match carved into ranges.
+  let useSeg=seg;
+  if(round?.nassau){ useSeg = c.k==='out' ? (segForHole(round,c.from)||seg) : c.k==='in' ? (segForHole(round,c.from)||seg) : gridSegOf(round,seg); }
+  const m=matchOfSide(useSeg, sideId) || matchOfSide(seg, sideId); if(!m) return '<div></div>';
+  const imA=entrySideOfMatch(useSeg, sideId, m)==='a';
+  const lo=c.from, hi=c.to;
+  let entry=null;
+  if(FORMATS[useSeg.format]?.scoring==='aggregate'){
+    let a=0,b=0,n=0;
+    for(let h=lo; h<=hi; h++){ const an=groupHoleNet(round,useSeg,m.a,h), bn=groupHoleNet(round,useSeg,m.b,h); if(an==null||bn==null) continue; a+=an; b+=bn; n++; }
+    if(n) entry={diff: imA?(b-a):(a-b), isAgg:true};
+  } else {
+    const {aVal,bVal}=matchValFns(round, useSeg, m); let up=0, n=0;
+    for(let h=lo; h<=hi; h++){ const x=aVal(h), y=bVal(h); if(x==null||y==null) continue; n++; const cv=cmpVals(x,y); if(cv<0) up+=imA?1:-1; else if(cv>0) up+=imA?-1:1; }
+    if(n) entry={diff:up};
+  }
+  const {text,cls}=matchCellLabel(entry);
+  return `<div class="sc-box sc-tot sc-match ${cls}">${text}</div>`;
+}
 function matchCellLabel(entry){
   if(!entry) return {text:'', cls:''};
   if(entry.isAgg){
@@ -1790,7 +1811,7 @@ function cardViewHTML(round, seg, m){
   const rowPar=lbl('Par')+rowOf(h=>`<div class="sc-box sc-par">${pars[h-1]||'—'}</div>`, c=>{ let t=0; for(let h=c.from; h<=c.to; h++) t+=pars[h-1]||0; return `<div class="sc-box sc-tot sc-par">${t||'—'}</div>`; });
   const rows=(arr)=>arr.map(r=>lbl(r.label)+rowOf(h=>`<div class="sc-box sc-opp">${oppCellInner(round,seg,r.id,h)}</div>`, c=>`<div class="sc-box sc-tot">${totCellInner(round,seg,r.id,c)}</div>`)).join('');
   const prog=matchProgressionForSide(round,seg,aId);
-  const rowMatch=prog ? lbl('Match')+rowOf(h=>{ const {text,cls}=matchCellLabel(prog[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }, c=>'<div></div>') : '';
+  const rowMatch=prog ? lbl('Match')+rowOf(h=>{ const {text,cls}=matchCellLabel(prog[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }, c=>matchColCell(round,seg,aId,c)) : '';
   const st=personalMatchStatus(round,seg,aId);
   const aName=A.map(r=>r.label).join(' + ');
   const n=segMatches(seg).findIndex(x=>x.id===m.id)+1;
@@ -2432,7 +2453,7 @@ function viewEnter(){
   }
   const opps = opponentSides(seg, side.id);
   const oppRows = opps.map(o=>lbl('vs '+o.label,'opp')+rowOf(h=>oppCellHTML(round,hseg(h),o.id,h), c=>totCellHTML(round,gseg,o.id,c))).join('');
-  const rowMatch = progression ? lbl('Match')+rowOf(h=>{ if(h<seg.start||h>seg.end) return '<div></div>'; const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }, c=>'<div></div>') : '';
+  const rowMatch = progression ? lbl('Match')+rowOf(h=>{ if(h<seg.start||h>seg.end) return '<div></div>'; const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }, c=>matchColCell(round,seg,side.id,c)) : '';
   const tableHTML = `<div class="sc-scroll">
       <div class="sc-table" style="grid-template-columns:86px ${cols.map(c=>c.t==='h'?'44px':'62px').join(' ')}">
         ${rowHole}${rowPar}${myRows}${oppRows}<div id="matchRow" style="display:contents">${rowMatch}</div>
@@ -2704,7 +2725,7 @@ function paintMatchRow(round, seg, sideId){
   const prog=personalMatchStatus(round, seg, sideId) ? matchProgressionForSide(round, seg, sideId) : null;
   if(!prog){ row.innerHTML=''; return; }
   let html=`<div class="sc-plabel" title="Match"><span>Match</span></div>`;   // the label cell — without it every cell shifts one column left
-  segCols(gridSegOf(round,seg)).forEach(c=>{ if(c.t==='h'){ if(c.h<seg.start||c.h>seg.end){ html+='<div></div>'; return; } const {text,cls}=matchCellLabel(prog[c.h]); html+=`<div class="sc-box sc-match ${cls}">${text}</div>`; } else html+='<div></div>'; });
+  segCols(gridSegOf(round,seg)).forEach(c=>{ if(c.t==='h'){ if(c.h<seg.start||c.h>seg.end){ html+='<div></div>'; return; } const {text,cls}=matchCellLabel(prog[c.h]); html+=`<div class="sc-box sc-match ${cls}">${text}</div>`; } else html+=matchColCell(round,seg,sideId,c); });
   row.innerHTML=html;
 }
 function updateEntryAfterSave(card){
