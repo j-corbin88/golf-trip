@@ -204,6 +204,8 @@ input,select{font-family:inherit;font-size:16px}
 .mullgrp.has .mullminus{visibility:visible}
 .mull-tag{position:absolute;top:1px;left:2px;font-size:10px;line-height:1;font-style:normal;font-family:'Inter';font-weight:700;color:#a8431f}
 .sc-score.on .mull-tag{color:#ffb98f}
+.pk-tag{position:absolute;bottom:1px;right:3px;font-size:10px;line-height:1;font-style:normal;font-family:'Inter';font-weight:800;color:#a23a30}
+.sc-score.on .pk-tag{color:#ffb0a0}
 .mb-teams{display:flex;align-items:stretch;gap:10px;margin-bottom:12px}
 .mb-team{flex:1;border-radius:12px;padding:10px 12px;background:rgba(237,231,214,.07);border:1px solid rgba(237,231,214,.16);color:var(--light)}
 .mb-team .n{font-family:'Oswald';font-size:11px;letter-spacing:.12em;text-transform:uppercase;display:flex;align-items:center;gap:6px}
@@ -1076,6 +1078,11 @@ function sideCH(ids, c, fmt){
   if(method==='usga') return chs.length===2 ? r1(0.35*chs[0]+0.15*chs[1]) : r1(chs.reduce((a,b)=>a+b,0)/chs.length);
   return chs[0]; // 'low' — side plays off its lowest handicap
 }
+/* A PICK-UP at the max is recorded as the max, but it can never win a hole: a real (holed-out) score always beats it, and if both
+   sides picked up the hole is halved. Engine trick: a picked-up net is stored as PK + net, so any real net is lower; cmpVals() treats two PK values as equal. */
+const PK=1000;
+const isPick=(card,h)=>!!card?.pick?.[h];
+function cmpVals(a,b){ if(a>=PK && b>=PK) return 0; return a<b?-1:(a>b?1:0); }   // -1: a wins the hole, 1: b wins, 0: halved
 function matchValFns(round, seg, match){
   const c=courseOf(round); const si=c?.si||[]; const fmt=seg.format;
   const isGroup=FORMATS[fmt]?.side==='group';
@@ -1085,11 +1092,11 @@ function matchValFns(round, seg, match){
     const aStk=r1(aCH-low), bStk=r1(bCH-low);
     // card lookup is per-hole (not hoisted) so an agg segment (e.g. Nassau "Total") can pull
     // each hole from whichever real segment (front/back) actually holds that card.
-    aVal=(h)=>{ const rid=segIdForHole(round,seg,h); const card=State.cards[cardKey(round.id,rid,match.id+':a')]; return card?.holes?.[h]!=null ? card.holes[h]-strokesOnHole(aStk,si[h-1]) : null; };
-    bVal=(h)=>{ const rid=segIdForHole(round,seg,h); const card=State.cards[cardKey(round.id,rid,match.id+':b')]; return card?.holes?.[h]!=null ? card.holes[h]-strokesOnHole(bStk,si[h-1]) : null; };
+    aVal=(h)=>{ const rid=segIdForHole(round,seg,h); const card=State.cards[cardKey(round.id,rid,match.id+':a')]; return card?.holes?.[h]!=null ? card.holes[h]-strokesOnHole(aStk,si[h-1])+(isPick(card,h)?PK:0) : null; };
+    bVal=(h)=>{ const rid=segIdForHole(round,seg,h); const card=State.cards[cardKey(round.id,rid,match.id+':b')]; return card?.holes?.[h]!=null ? card.holes[h]-strokesOnHole(bStk,si[h-1])+(isPick(card,h)?PK:0) : null; };
   } else {
     // Individual formats: each player plays their own strokes from the sheet; low net wins the hole
-    const bestNet=(ids,h)=>{ let best=null; const rid=segIdForHole(round,seg,h); ids.forEach(id=>{ const g=State.cards[cardKey(round.id,rid,id)]?.holes?.[h]; if(g!=null){ const nt=g-strokeSheet(id,round,h); if(best==null||nt<best) best=nt; } }); return best; };
+    const bestNet=(ids,h)=>{ let best=null; const rid=segIdForHole(round,seg,h); ids.forEach(id=>{ const cd=State.cards[cardKey(round.id,rid,id)]; const g=cd?.holes?.[h]; if(g!=null){ const nt=g-strokeSheet(id,round,h)+(isPick(cd,h)?PK:0); if(best==null||nt<best) best=nt; } }); return best; };
     aVal=(h)=>bestNet(match.a,h); bVal=(h)=>bestNet(match.b,h);
   }
   return {aVal,bVal,isGroup};
@@ -1097,7 +1104,7 @@ function matchValFns(round, seg, match){
 function computeMatch(round, seg, match){
   const {aVal,bVal}=matchValFns(round, seg, match);
   let aUp=0,bUp=0,played=0;
-  for(let h=seg.start; h<=seg.end; h++){ const a=aVal(h), b=bVal(h); if(a==null||b==null) continue; played++; if(a<b)aUp++; else if(b<a)bUp++; }
+  for(let h=seg.start; h<=seg.end; h++){ const a=aVal(h), b=bVal(h); if(a==null||b==null) continue; played++; const cv=cmpVals(a,b); if(cv<0)aUp++; else if(cv>0)bUp++; }
   const total=seg.end-seg.start+1, remaining=total-played, diff=aUp-bUp;
   const clinched=Math.abs(diff)>remaining;
   const final=remaining===0 || clinched;
@@ -1166,7 +1173,7 @@ function holeOutcomeForSide(round, seg, sideId, hole){
   const imA=entrySideOfMatch(seg, sideId, m)==='a';
   const mine=imA?aVal(hole):bVal(hole), theirs=imA?bVal(hole):aVal(hole);
   if(mine==null || theirs==null) return {outcome:null};
-  return {outcome: mine<theirs?'won':(mine>theirs?'lost':'halved')};
+  { const cv=cmpVals(mine,theirs); return {outcome: cv<0?'won':(cv>0?'lost':'halved')}; }
 }
 // live match status from MY side's perspective ("2 UP · thru 5", not always A's perspective)
 function personalMatchStatus(round, seg, sideId){
@@ -1239,7 +1246,7 @@ function matchProgressionForSide(round, seg, sideId){
   for(let h=seg.start; h<=seg.end; h++){
     const a=aVal(h), b=bVal(h);
     const settled = a!=null && b!=null;
-    if(settled){ if(a<b) aUp++; else if(b<a) bUp++; }
+    if(settled){ const cv=cmpVals(a,b); if(cv<0) aUp++; else if(cv>0) bUp++; }
     const diff = imA ? (aUp-bUp) : (bUp-aUp);
     out[h] = settled ? {diff} : null;
   }
@@ -2214,7 +2221,7 @@ function segLeaderboard(round,seg){
    card.mull = { [hole]: { [playerId]: shotsTaken } } — stored on the same card as the scores, so it syncs, merges and
    survives offline exactly like a score. Several can be taken on one hole. */
 const mullCount=(card,h)=>{ const m=card?.mull?.[h]; return m?Object.values(m).reduce((a,b)=>a+b,0):0; };
-function mullTag(card,h){ const n=mullCount(card,h); return n>0 ? `<i class="mull-tag">🔥${n>1?n:''}</i>` : ''; }
+function mullTag(card,h){ const n=mullCount(card,h); return (n>0 ? `<i class="mull-tag">🔥${n>1?n:''}</i>` : '') + (isPick(card,h) ? `<i class="pk-tag" title="Picked up">P</i>` : ''); }   // cell corner tags: 🔥 shots (top-left) and P = picked up at the max (bottom-right)
 // A scored cell: gross in black, then the net in red parentheses ("5 (4)"). The gap is dropped for two-digit scores so they still fit the box.
 function netPair(gross, net, spLen=1){
   if(net==null) return `${gross}`;
@@ -2523,7 +2530,7 @@ function wireEntry(){
   const setPend=(v)=>{ const r=curEntryRefs(); State.pend={key:[r.round.id,r.seg.id,State.entrySide,State.entryHole].join('|'), v}; paintStepper(); };
   if(plus) plus.onclick=()=>setPend(Math.min(15,shownNow()+1));
   if(minus) minus.onclick=()=>setPend(Math.max(1,shownNow()-1));
-  window.enterScore=()=>{ const v=shownNow(); const lim=maxScoreLimit(); if(lim && v>lim.max){ warnOverMax(v,lim); return; } State.pend=null; saveHole(v); };   // Enter logs the number on screen (par if untouched)
+  window.enterScore=()=>{ const v=shownNow(); const lim=maxScoreLimit(); if(lim && v>=lim.max){ warnOverMax(v,lim); return; } State.pend=null; saveHole(v); };   // Enter logs the number on screen (par if untouched)
   window.clearHole=()=>{ State.pend=null; saveHole(null); };
   const selCell=document.getElementById('hole-'+State.entryHole+'-'+State.entrySide);
   if(selCell && typeof selCell.scrollIntoView==='function') selCell.scrollIntoView({inline:'center', block:'nearest'});
@@ -2554,11 +2561,11 @@ const recentLocalWrite=new Map();   // storage key -> timestamp until which loca
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }); }
 // Append-only audit trail: every score entry/clear is written as its own never-overwritten record (log:<round>:<time>-<rand>)
 // so a disputed score can always be traced to who entered what, and when. The app never reads these back.
-function logEntry(round, seg, sideId, hole, from, to){
+function logEntry(round, seg, sideId, hole, from, to, pickup){
   try{
     const ts=Date.now();
     Store.set(`log:${round.id}:${String(ts).padStart(13,'0')}-${Math.random().toString(36).slice(2,6)}`,
-      {ts, at:new Date(ts).toISOString(), by:player(State.me)?.name||'—', byId:State.me||null, round:round.id, seg:seg?.id||null, side:sideId, hole, from:from??null, to:to??null, sandbox:!!State.sandbox});
+      {ts, at:new Date(ts).toISOString(), by:player(State.me)?.name||'—', byId:State.me||null, round:round.id, seg:seg?.id||null, side:sideId, hole, from:from??null, to:to??null, pickup:!!pickup, sandbox:!!State.sandbox});
   }catch(e){}
 }
 /* Max score per hole (gross): par + N (default par + 1). Admin can change N or switch it off. Over the max -> a warning popup. */
@@ -2570,24 +2577,34 @@ function maxScoreLimit(){
   return {par, mult, add, max:Math.round(par*mult+add)};
 }
 function warnOverMax(v, lim){
-  showModal(`<div class="modal-h"><h2>⚠️ Over the max score</h2><p class="muted" style="margin:4px 0 0">The max here is <b>${lim.mult===1?'':lim.mult+' × '}par${lim.add?' + '+lim.add:''} = ${lim.max}</b> (par ${lim.par}). You're about to record <b>${v}</b>.</p></div>
-    <div class="modal-b">
-      <button class="btn gold" onclick="overMaxChoice(${lim.max})">Record the max (${lim.max})</button>
-      <button class="btn ghost" style="margin-top:8px" onclick="overMaxChoice(${v})">Keep ${v} anyway</button>
-      <button class="btn ghost" style="margin-top:8px" onclick="closeModal()">Cancel — go back</button>
-    </div>`);
+  const formula=`${lim.mult===1?'':lim.mult+' × '}par${lim.add?' + '+lim.add:''} = ${lim.max}`;
+  if(v>lim.max){
+    showModal(`<div class="modal-h"><h2>⚠️ Over the max score</h2><p class="muted" style="margin:4px 0 0">The max here is <b>${formula}</b> (par ${lim.par}). You're entering <b>${v}</b> — anything past the max is a <b>pick-up</b>, recorded as ${lim.max}. A pick-up can't win the hole.</p></div>
+      <div class="modal-b">
+        <button class="btn gold" onclick="maxChoice(${lim.max},true)">Record pick-up (${lim.max})</button>
+        <button class="btn ghost" style="margin-top:8px" onclick="closeModal()">Cancel — go back</button>
+      </div>`);
+  } else {
+    showModal(`<div class="modal-h"><h2>At the max score</h2><p class="muted" style="margin:4px 0 0">The max here is <b>${formula}</b> (par ${lim.par}). Did you actually <b>hole out in ${lim.max}</b>, or <b>pick up</b>? A pick-up counts as ${lim.max} but can't win the hole.</p></div>
+      <div class="modal-b">
+        <button class="btn gold" onclick="maxChoice(${lim.max},false)">Holed out in ${lim.max}</button>
+        <button class="btn" style="margin-top:8px;background:var(--ink);color:var(--light)" onclick="maxChoice(${lim.max},true)">Picked up (counts as ${lim.max})</button>
+        <button class="btn ghost" style="margin-top:8px" onclick="closeModal()">Cancel — go back</button>
+      </div>`);
+  }
 }
-function overMaxChoice(v){ closeModal(); State.pend=null; saveHole(v); }
+function maxChoice(v, pickup){ closeModal(); State.pend=null; saveHole(v, pickup); }
 async function setMaxOverOn(on){ State.config.settings.maxOverOn=!!on; await saveConfig(); renderAdmin(); }
 async function setMaxFormula(key,v){ const n=Number(v); if(!Number.isFinite(n)||n<0) return renderAdmin(); State.config.settings[key]=Math.min(key==='maxMult'?5:20,n); await saveConfig(); renderAdmin(); }
-async function saveHole(v){
+async function saveHole(v, pickup){
   const {round,key}=curEntryRefs();
   if(round?.frozen) return; // locked
   const card=State.cards[key] || {holes:{}, enteredBy:'', updatedAt:0};
   if(!card.holes) card.holes={};
   const prevVal=card.holes[State.entryHole];
   if(v==null) delete card.holes[State.entryHole]; else card.holes[State.entryHole]=v;
-  logEntry(round, curEntryRefs().seg, State.entrySide, State.entryHole, prevVal, v);
+  if(pickup && v!=null){ card.pick=card.pick||{}; card.pick[State.entryHole]=1; } else if(card.pick){ delete card.pick[State.entryHole]; }
+  logEntry(round, curEntryRefs().seg, State.entrySide, State.entryHole, prevVal, v, pickup);
   card.enteredBy=player(State.me)?.name||'—';
   card.updatedAt=Date.now();
   State.cards[key]=card;
@@ -3165,7 +3182,7 @@ function renderAdminGuide(){
 
       ${sec('Getting set up',[
         ['Roster, teams &amp; handicaps','Add each player and their handicap index under <b>Players &amp; handicaps</b>. Players can also set their own index when they sign in on their phone — until you lock it (below). Name your two teams and pick their colors up top.'],
-        ['Max score per hole','Gross max is <b>2 × par + 1</b> by default (par 4 = 9). If someone enters more, a popup warns them and offers to record the max instead (or keep it). Change the number, or switch it off, in the Control Room next to Lock handicaps.'],
+        ['Max score per hole','Gross max is <b>2 × par + 1</b> by default (par 4 = 9). At the max a popup asks <b>holed out or picked up</b>; past the max it is always a pick-up (recorded as the max, marked <b>P</b>). A pick-up can never win a hole — any real score beats it, and if both sides picked up the hole is halved. Change the numbers, or switch it off, in the Control Room next to Lock handicaps.'],
         ['Lock handicaps','Once everyone\u2019s number is right, flip <b>Lock handicaps</b> so players can\u2019t change their index the night before. You can still edit anyone\u2019s.'],
         ['Courses &amp; tees','Each course has selectable tees — pick the ones you\u2019re actually playing and the rating/slope (and everyone\u2019s course handicap) update automatically.'],
       ])}
