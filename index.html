@@ -2294,21 +2294,29 @@ function segCols(seg){
   cols.push({t:'t',k:'tot',lab:two?'TOT':(seg.end<=9?'OUT':'IN'),from:seg.start,to:seg.end});
   return cols;
 }
+// Nassau rounds show ONE 18-hole card on Enter Score (OUT / IN / TOT) even though Front and Back are separate segments
+// underneath: the grid segment is the derived "Total", and each hole is read from whichever nine owns it.
+const gridSegOf=(round,seg)=> round?.nassau ? (segsOf(round).find(x=>x.agg)||{id:'t',label:'Total',start:1,end:18,format:seg?.format,agg:true}) : seg;
+const holeSeg=(round,gseg,h)=> gseg?.agg ? (segForHole(round,h)||gseg) : gseg;
 function totCellInner(round, seg, sid, c){
-  const card=State.cards[cardKey(round.id,seg.id,sid)]; let g=0,n=0,cnt=0;
-  for(let h=c.from; h<=c.to; h++){ const v=card?.holes?.[h]; if(v==null) continue; g+=v; n+=entryNetForHole(round,seg,sid,h,v); cnt++; }
-  let fire=0; for(let h=c.from; h<=c.to; h++) fire+=mullCount(card,h);
+  let g=0,n=0,cnt=0,fire=0;
+  for(let h=c.from; h<=c.to; h++){
+    const hs=holeSeg(round,seg,h), card=State.cards[cardKey(round.id,hs.id,sid)];
+    fire+=mullCount(card,h);
+    const v=card?.holes?.[h]; if(v==null) continue; g+=v; n+=entryNetForHole(round,hs,sid,h,v); cnt++;
+  }
   const tag=fire>0?`<i class="mull-tag">🔥${fire}</i>`:'';   // Fireball shots taken in this stretch
   if(!cnt) return tag;
   return netPair(g, (useHcp()&&n!==g)?n:null, 2)+tag;
 }
 function parTotInner(round, seg, sideId, c){
   const pars=courseOf(round)?.pars||[]; let par=0, stk=0;
-  for(let h=c.from; h<=c.to; h++){ par+=pars[h-1]||0; if(useHcp()) stk+=entryStrokesForHole(round,seg,sideId,h); }
+  for(let h=c.from; h<=c.to; h++){ par+=pars[h-1]||0; if(useHcp()) stk+=entryStrokesForHole(round,holeSeg(round,seg,h),sideId,h); }
   return `${par||'—'}${stk>0?`<sup>${stk}</sup>`:''}`;
 }
 const totCellHTML=(round,seg,sid,c)=>`<div class="sc-box sc-tot" id="sct-${c.k}-${sid}">${totCellInner(round,seg,sid,c)}</div>`;
-function paintTotals(round, seg, sideId){
+function paintTotals(round, seg0, sideId){
+  const seg=gridSegOf(round,seg0);
   const ids=[...(partnerSideIds(seg,sideId)||[sideId]), ...opponentSides(seg,sideId).map(o=>o.id)];
   segCols(seg).filter(c=>c.t==='t').forEach(c=>{ ids.forEach(id=>{ const el=document.getElementById(`sct-${c.k}-${id}`); if(el) el.innerHTML=totCellInner(round,seg,id,c); }); });
 }
@@ -2325,11 +2333,11 @@ function strokeHint(round, seg, pid, h){
   const n=entryStrokesForHole(round,seg,pid,h);
   return n>0 ? `<span class="hint">${n}</span>` : '';
 }
-function paintParRow(round, seg, sideId){
-  const partners=partnerSideIds(seg, sideId);
-  for(let h=seg.start; h<=seg.end; h++){ const el=document.getElementById('par-'+h); if(el) el.innerHTML=parCellInner(round,seg,sideId,h); }
+function paintParRow(round, seg0, sideId){
+  const seg=gridSegOf(round,seg0), partners=partnerSideIds(seg0, sideId);
+  for(let h=seg.start; h<=seg.end; h++){ const el=document.getElementById('par-'+h); if(el) el.innerHTML=parCellInner(round,holeSeg(round,seg,h),sideId,h); }
   segCols(seg).filter(c=>c.t==='t').forEach(c=>{ const el=document.getElementById('par-'+c.k); if(el) el.innerHTML=parTotInner(round,seg,sideId,c); });
-  const lab=document.getElementById('parLabel'); if(lab) lab.firstChild.textContent=parLabelText(round,seg,sideId,partners);
+  const lab=document.getElementById('parLabel'); if(lab) lab.firstChild.textContent=parLabelText(round,seg0,sideId,partners);
 }
 // the opposing side(s) in this side's match: individual formats -> each opposing player; group formats -> the one opposing team card
 function opponentSides(seg, sideId){
@@ -2351,8 +2359,9 @@ function oppCellInner(round, seg, oppId, h){
 }
 const oppCellHTML = (round,seg,oppId,h)=>`<div class="sc-box sc-opp" id="opp-${h}-${oppId}">${oppCellInner(round,seg,oppId,h)}</div>`;
 function paintOpponentRows(round, seg, sideId){
+  const g=gridSegOf(round,seg);
   opponentSides(seg, sideId).forEach(o=>{
-    for(let h=seg.start; h<=seg.end; h++){ const el=document.getElementById(`opp-${h}-${o.id}`); if(el) el.innerHTML=oppCellInner(round,seg,o.id,h); }
+    for(let h=g.start; h<=g.end; h++){ const el=document.getElementById(`opp-${h}-${o.id}`); if(el) el.innerHTML=oppCellInner(round,holeSeg(round,g,h),o.id,h); }
   });
   paintTotals(round,seg,sideId);
 }
@@ -2395,32 +2404,35 @@ function viewEnter(){
   const partners = partnerSideIds(seg, side.id);   // teammates sharing this match side (better ball/shramble/Team Total), else null
 
   const scoreCell = (h,pid)=>{
-    const c2 = pid===side.id ? card : (State.cards[cardKey(round.id,seg.id,pid)]||{holes:{}});
+    const hs=hseg(h), here=hs.id===seg.id;
+    const c2 = (here && pid===side.id) ? card : (State.cards[cardKey(round.id,hs.id,pid)]||{holes:{}});
     const v=c2.holes?.[h];
-    const net=v!=null?entryNetForHole(round,seg,pid,h,v):null;
+    const net=v!=null?entryNetForHole(round,hs,pid,h,v):null;
     const showNet = v!=null && useHcp() && net!==v;
-    return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="selectCell(${h},'${pid}')">${v!=null?netPair(v,showNet?net:null):strokeHint(round,seg,pid,h)}${mullTag(c2,h)}</button>`;
+    const act = here ? `selectCell(${h},'${pid}')` : `jumpCell('${hs.id}',${h},'${pid}')`;   // other nine: switch to it, then select
+    return `<button id="hole-${h}-${pid}" class="sc-box sc-score ${(h===State.entryHole&&pid===State.entrySide)?'on':''} ${v!=null?'done':''}" onclick="${act}">${v!=null?netPair(v,showNet?net:null):strokeHint(round,hs,pid,h)}${mullTag(c2,h)}</button>`;
   };
 
   // One table for every format. A sticky label column says what each row is: Hole / Par / my row(s) / the
   // opposing row(s) / Match. Opponent rows are read-only and fill in live as the other side enters scores.
   const lbl=(t,extra)=>`<div class="sc-plabel${extra?' '+extra:''}" title="${esc(t)}"><span>${esc(t)}</span></div>`;
-  const cols=segCols(seg);
+  const gseg=gridSegOf(round,seg), hseg=(h)=>holeSeg(round,gseg,h);
+  const cols=segCols(gseg);
   const rowOf=(holeFn,totFn)=>cols.map(c=>c.t==='h'?holeFn(c.h):totFn(c)).join('');
   const rowHole = lbl('')+rowOf(h=>`<div class="sc-h ${h===State.entryHole?'on':''}" data-h="${h}">${h}</div>`, c=>`<div class="sc-h sc-th">${c.lab}</div>`);
   let rowPar, myRows;
   const parLbl=`<div class="sc-plabel" id="parLabel"><span>${esc(parLabelText(round,seg,side.id,partners))}</span></div>`;
-  const parCells=rowOf(h=>`<div class="sc-box sc-par" id="par-${h}">${parCellInner(round,seg,side.id,h)}</div>`, c=>`<div class="sc-box sc-tot sc-par" id="par-${c.k}">${parTotInner(round,seg,side.id,c)}</div>`);
+  const parCells=rowOf(h=>`<div class="sc-box sc-par" id="par-${h}">${parCellInner(round,hseg(h),side.id,h)}</div>`, c=>`<div class="sc-box sc-tot sc-par" id="par-${c.k}">${parTotInner(round,gseg,side.id,c)}</div>`);
   if(partners){
     rowPar = parLbl+parCells;
-    myRows = partners.map(pid=>lbl(displayName(pid),'mine')+rowOf(h=>scoreCell(h,pid), c=>totCellHTML(round,seg,pid,c))).join('');
+    myRows = partners.map(pid=>lbl(displayName(pid),'mine')+rowOf(h=>scoreCell(h,pid), c=>totCellHTML(round,gseg,pid,c))).join('');
   } else {
     rowPar = parLbl+parCells;
-    myRows = lbl(isIndiv?displayName(side.id):sideLabel(side),'mine')+rowOf(h=>scoreCell(h,side.id), c=>totCellHTML(round,seg,side.id,c));
+    myRows = lbl(isIndiv?displayName(side.id):sideLabel(side),'mine')+rowOf(h=>scoreCell(h,side.id), c=>totCellHTML(round,gseg,side.id,c));
   }
   const opps = opponentSides(seg, side.id);
-  const oppRows = opps.map(o=>lbl('vs '+o.label,'opp')+rowOf(h=>oppCellHTML(round,seg,o.id,h), c=>totCellHTML(round,seg,o.id,c))).join('');
-  const rowMatch = progression ? lbl('Match')+rowOf(h=>{ const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }, c=>'<div></div>') : '';
+  const oppRows = opps.map(o=>lbl('vs '+o.label,'opp')+rowOf(h=>oppCellHTML(round,hseg(h),o.id,h), c=>totCellHTML(round,gseg,o.id,c))).join('');
+  const rowMatch = progression ? lbl('Match')+rowOf(h=>{ if(h<seg.start||h>seg.end) return '<div></div>'; const {text,cls}=matchCellLabel(progression[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }, c=>'<div></div>') : '';
   const tableHTML = `<div class="sc-scroll">
       <div class="sc-table" style="grid-template-columns:86px ${cols.map(c=>c.t==='h'?'44px':'62px').join(' ')}">
         ${rowHole}${rowPar}${myRows}${oppRows}<div id="matchRow" style="display:contents">${rowMatch}</div>
@@ -2518,7 +2530,12 @@ function paintStepper(){
   const en=document.getElementById('enterBtn'); if(en) en.classList.toggle('logged',logged);
 }
 function entryTotalHTML(card, round, seg, sideId){
-  const g=grossTotal(card)||0, thru=holesPlayed(card), segN=seg.end-seg.start+1;
+  let segN=seg.end-seg.start+1;
+  if(round?.nassau){   // one 18-hole card: add up both nines
+    const all={}; segsOf(round).filter(x=>x.format&&!x.agg).forEach(x=>{ const cd=(x.id===seg.id&&card)?card:State.cards[cardKey(round.id,x.id,sideId)]; Object.entries(cd?.holes||{}).forEach(([h,v])=>{ if(h>=x.start&&h<=x.end) all[h]=v; }); });
+    card={...card, holes:all}; segN=18;
+  }
+  const g=grossTotal(card)||0, thru=holesPlayed(card);
   const isIndiv = !String(sideId).includes(':') && !!player(sideId);
   let net='';
   if(isIndiv && useHcp()){
@@ -2531,6 +2548,7 @@ function setEnterRound(id){ State.activeRound=id; State.entrySeg=null; State.ent
 function setEnterSeg(id){ State.entrySeg=id; State.entrySide=null; render(false); }
 function setSide(id){ State.entrySide=id; const r=curEntryRefs(); if(r.seg) State.entryHole=startHoleForSide(r.seg,id); render(false); }
 function setHole(h){ State.entryHole=h; render(false); }
+function jumpCell(segId,h,pid){ State.pend=null; State.entrySeg=segId; State.entrySide=pid; State.entryHole=h; render(false); }
 function nextHole(){
   const round=State.config.rounds.find(r=>r.id===State.activeRound);
   const seg=enterableSegs(round).find(s=>s.id===State.entrySeg);
@@ -2686,7 +2704,7 @@ function paintMatchRow(round, seg, sideId){
   const prog=personalMatchStatus(round, seg, sideId) ? matchProgressionForSide(round, seg, sideId) : null;
   if(!prog){ row.innerHTML=''; return; }
   let html=`<div class="sc-plabel" title="Match"><span>Match</span></div>`;   // the label cell — without it every cell shifts one column left
-  segCols(seg).forEach(c=>{ if(c.t==='h'){ const {text,cls}=matchCellLabel(prog[c.h]); html+=`<div class="sc-box sc-match ${cls}">${text}</div>`; } else html+='<div></div>'; });
+  segCols(gridSegOf(round,seg)).forEach(c=>{ if(c.t==='h'){ if(c.h<seg.start||c.h>seg.end){ html+='<div></div>'; return; } const {text,cls}=matchCellLabel(prog[c.h]); html+=`<div class="sc-box sc-match ${cls}">${text}</div>`; } else html+='<div></div>'; });
   row.innerHTML=html;
 }
 function updateEntryAfterSave(card){
