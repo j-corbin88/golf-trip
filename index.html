@@ -2523,6 +2523,28 @@ function wireEntry(){
   if(selCell && typeof selCell.scrollIntoView==='function') selCell.scrollIntoView({inline:'center', block:'nearest'});
 }
 const recentLocalWrite=new Map();   // storage key -> timestamp until which local data should win over a poll fetch
+/* Auto-update. A Home Screen app stays suspended between uses and never reloads on its own, so it kept running old code
+   (the data refreshed, the app itself didn't). On load, on coming back to the foreground, and every 90s while open, fetch the
+   live page; if it differs from the version we booted with, reload — but only when nothing is half-entered. */
+(function(){
+  if(!location.protocol.startsWith('http')) return;
+  const sum=(t)=>{ let h=5381; for(let i=0;i<t.length;i++) h=((h<<5)+h+t.charCodeAt(i))|0; return t.length+':'+h; };
+  let base=null, busy=false;
+  const safe=()=> !State.pend && !document.querySelector('#modalHost .scrim') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName||'');
+  async function check(){
+    if(busy || document.hidden || navigator.onLine===false) return; busy=true;
+    try{
+      const r=await fetch('/?_v='+Date.now(),{cache:'no-store'}); if(!r.ok) throw 0;
+      const s=sum(await r.text());
+      if(base===null) base=s; else if(s!==base && safe()) location.reload();
+    }catch(e){}
+    busy=false;
+  }
+  window.__cupCheckUpdate=check;
+  window.addEventListener('load',()=>setTimeout(check,2500));
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) check(); });
+  setInterval(check,90000);
+})();
 if('serviceWorker' in navigator && location.protocol.startsWith('http')){ window.addEventListener('load',()=>{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); }); }
 // Append-only audit trail: every score entry/clear is written as its own never-overwritten record (log:<round>:<time>-<rand>)
 // so a disputed score can always be traced to who entered what, and when. The app never reads these back.
