@@ -2402,8 +2402,8 @@ const parLabelText = (round,seg,sideId,partners)=> !useHcp() ? 'Par' : (partners
 // In partner formats the Par row can only show ONE player's strokes (whoever is selected), so each player's own
 // empty boxes also hint their strokes (a red "2") until a score is entered.
 function strokeHint(round, seg, pid, h){
-  // partner formats (better ball etc.) AND shared-card team formats (scramble / foursomes) hint the strokes right in the empty box
-  if(!useHcp() || !(partnerSideIds(seg, pid) || FORMATS[seg.format]?.side==='group')) return '';
+  // every format hints the strokes right in the empty box (singles too, like the opponent's row)
+  if(!useHcp()) return '';
   const n=entryStrokesForHole(round,seg,pid,h);
   return n>0 ? `<span class="hint">${n}</span>` : '';
 }
