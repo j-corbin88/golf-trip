@@ -825,11 +825,6 @@ function reconcileTrip(){
   }
   // One-time team rename requested by the commissioner (Team Devin -> Pawley's Patrol); later admin renames stick.
   const t2=(cfg.teams||[]).find(t=>t.id==='t2');
-  if(!cfg.settings.r1TeeWhite){   // Round 1 was played from the White tees (True Blue) — one-time fix so every device uses 68.9/130
-    const c1=(cfg.courses||[]).find(c=>c.id==='c1'), w=(c1?.tees||[]).find(t=>t.name==='White');
-    if(c1 && w){ c1.tee='White'; c1.rating=w.rating; c1.slope=w.slope; }
-    cfg.settings.r1TeeWhite=true; changed=true;
-  }
   if(t2 && !cfg.settings.t2Logo){ if(!t2.logo) t2.logo='/icons/pawleys-patrol.jpg'; cfg.settings.t2Logo=true; changed=true; }
   if(t2 && !cfg.settings.t2Renamed){ if(t2.name==='Team Devin') t2.name="Pawley's Patrol"; cfg.settings.t2Renamed=true; changed=true; }
   return changed;
