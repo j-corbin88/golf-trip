@@ -1428,6 +1428,8 @@ function enterSummaryHTML(){
 function liveSegCount(){ let n=0; (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>segsOf(r).forEach(s=>{ if(s.format) n++; })); return n; }
 function totalSegCount(){ let n=0; (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>n+=segsOf(r).length); return n; }
 const roundLive = (r)=> segsOf(r).some(s=>s.format);
+// the round everyone should land on: the first live round that isn't locked yet (else the last live one)
+const currentRound = (cfg)=>{ const live=(cfg.rounds||[]).filter(r=>roundLive(r)); return live.find(r=>!r.frozen) || live[live.length-1] || (cfg.rounds||[])[0]; };
 const liveSegs = (r)=> segsOf(r).filter(s=>s.format);
 // segments a player can actually enter scores into — excludes agg (derived) segments like a
 // Nassau "Total", which has no scorecard of its own and is computed from front/back instead.
@@ -1465,7 +1467,7 @@ async function loadAll(){
   State.cards=await Store.list('card:');
   if(migrateTwelvePointDays()){ await saveConfig(); }
   State.me=Device.get('me');
-  if(!State.activeRound) State.activeRound=(cfg.rounds.find(r=>roundLive(r))||cfg.rounds[0])?.id;
+  if(!State.activeRound) State.activeRound=currentRound(cfg)?.id;
   document.getElementById('tripTitle').textContent=cfg.settings.tripName||'The Cup';
   document.getElementById('tripSub').textContent=cfg.settings.tripSub||'';
 }
@@ -2218,7 +2220,7 @@ function updateBoard(){
   body.innerHTML=boardBodyHTML();
 }
 function fmtPts(n){ return Number.isInteger(n)?n:n.toFixed(1); }
-function setRound(id){ State.activeRound=id; render(false); }
+function setRound(id){ State._roundPicked=true; State.activeRound=id; render(false); }
 
 function teamTotalBoard(round,seg){
   const c=courseOf(round);
@@ -2415,6 +2417,7 @@ function viewEnter(){
   const rounds=State.config.rounds.filter(r=>roundLive(r));
   if(!rounds.length) return `<div class="card"><div class="empty"><div class="big">🗓️</div><b>No round is live</b><p class="muted" style="margin-top:6px">The admin hasn't set a format for a day yet.</p></div></div>`;
 
+  if(!State._roundPicked){ const cr=currentRound(State.config); if(cr && rounds.find(r=>r.id===cr.id)) State.activeRound=cr.id; }   // follow the live round until someone taps a round themselves
   if(!State.activeRound || !rounds.find(r=>r.id===State.activeRound)) State.activeRound=rounds[0].id;
   const round=rounds.find(r=>r.id===State.activeRound);
   const roundTabsTop=`<div class="lb-round-tab">${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setEnterRound('${r.id}')">${esc(r.name)}${r.frozen?' 🔒':''}</button>`).join('')}</div>`;
@@ -2590,7 +2593,7 @@ function entryTotalHTML(card, round, seg, sideId){
   }
   return `Total ${g}${net} <span style="color:var(--text-dim);font-weight:500">(${thru}/${segN})</span>`;
 }
-function setEnterRound(id){ State.activeRound=id; State.entrySeg=null; State.entrySide=null; render(false); }
+function setEnterRound(id){ State._roundPicked=true; State.activeRound=id; State.entrySeg=null; State.entrySide=null; render(false); }
 function setEnterSeg(id){ State.entrySeg=id; State.entrySide=null; render(false); }
 function setSide(id){ State.entrySide=id; const r=curEntryRefs(); if(r.seg) State.entryHole=startHoleForSide(r.seg,id); render(false); }
 function setHole(h){ State.entryHole=h; render(false); }
