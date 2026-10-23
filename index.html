@@ -993,11 +993,22 @@ function segIdForHole(round, seg, hole){
   const real=segForHole(round, hole);
   return real ? real.id : seg.id;
 }
+// "Off the low" (per round, set in the Strokes sheet): the lowest handicap in the round plays to 0 and everyone else
+// gets the difference, on the hardest holes. Off (default) = everyone strokes off the course.
+const offLowOn=(round)=> !!State.config?.settings?.strokeOffLow?.[round?.id];
+function roundLowEff(round, fmt){
+  const c=courseOf(round), ids=new Set();
+  segsOf(round).forEach(sg=>segMatches(sg).forEach(m=>[...m.a,...m.b].forEach(id=>{ if(player(id)) ids.add(id); })));
+  if(!ids.size) (State.config.players||[]).forEach(p=>ids.add(p.id));
+  let low=null; ids.forEach(id=>{ if(hcpOf(id)==null) return; const e=Math.round(courseHcpOf(id,c)*allowanceFor(fmt)); if(low==null||e<low) low=e; });
+  return low||0;
+}
 function autoStrokes(pid, round, hole){
   if(!useHcp()) return 0;
   const seg=segForHole(round, hole); if(!seg) return 0;
   const c=courseOf(round);
-  const eff=Math.round(courseHcpOf(pid,c)*allowanceFor(seg.format));
+  let eff=Math.round(courseHcpOf(pid,c)*allowanceFor(seg.format));
+  if(offLowOn(round)) eff=Math.max(0, eff-roundLowEff(round, seg.format));
   return strokesOnHole(eff, c?.si?c.si[hole-1]:null);
 }
 function getStrokeOverride(rid, pid, hole){
@@ -3269,12 +3280,15 @@ function renderStrokeGrid(rid){
   const rows=players.map(p=>{
     const ch=courseHcpOf(p.id,c);
     const cells=H.map(h=>strokeCellHTML(rid,p.id,round,h)).join('');
-    return `<div class="grow"><div class="gname">${esc(displayName(p.id))}<span>${useHcp()?'CH '+fmtH(ch):'—'}</span></div>${cells}<button class="greset" onclick="resetStrokeRow('${rid}','${p.id}')" title="Reset row to auto">↺</button></div>`;
+    return `<div class="grow"><div class="gname">${esc(displayName(p.id))}<span>${useHcp()?'CH '+fmtH(ch)+(offLowOn(round)&&hcpOf(p.id)!=null?' · plays '+Math.max(0,Math.round(ch*allowanceFor((segsOf(round).find(sg=>sg.format&&!sg.agg)||{}).format))-roundLowEff(round,(segsOf(round).find(sg=>sg.format&&!sg.agg)||{}).format)):''):'—'}</span></div>${cells}<button class="greset" onclick="resetStrokeRow('${rid}','${p.id}')" title="Reset row to auto">↺</button></div>`;
   }).join('');
   showModal(`
     <div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Strokes</h2><button class="btn sm ghost" onclick="renderAdmin()">Done</button></div>
     <div class="modal-b">
       ${tabs}
+      <div class="eyebrow">How strokes are given · ${esc(round.name)}</div>
+      <div class="lb-round-tab" style="margin-bottom:4px"><button class="${offLowOn(round)?'':'on'}" onclick="setStrokeOffLow('${rid}',false)">Off the course</button><button class="${offLowOn(round)?'on':''}" onclick="setStrokeOffLow('${rid}',true)">Off the low</button></div>
+      <div class="muted" style="font-size:12px;margin:0 0 10px">${offLowOn(round)?`<b>Off the low:</b> the lowest handicap in this round plays to scratch (0 strokes) and everyone else gets the difference — someone 9 higher gets the 9 hardest holes.`:`<b>Off the course:</b> everyone gets their full course handicap.`} Applies to singles, better ball and team total (scramble &amp; foursomes use their own side handicap).</div>
       <div class="muted" style="margin:-2px 0 8px">${esc(round.name)} · ${esc(c?.name||'Course')} — tap a cell to cycle <b>auto → 0 → 1 → 2 → 3 → auto</b>. Faint = auto from handicap, <b style="color:var(--gold)">gold</b> = your override.</div>
       ${(!useHcp())?`<div class="banner">Handicaps are off — the whole event is gross, so the stroke sheet is ignored right now.</div>`:''}
       <div class="eyebrow">Stroke index · which hole ranks 1 (hardest) – 18</div>
@@ -3283,6 +3297,11 @@ function renderStrokeGrid(rid){
       <div class="gscroll"><div class="ggrid"><div class="grow ghead"><div class="gname">Hole · Par · SI</div>${headCells}<div class="greset"></div></div>${rows}</div></div>
       <div class="muted" style="font-size:11px;margin-top:8px">Dots drive net for singles, better ball, shramble and team total. Scramble &amp; foursomes are team formats (one side handicap), so per-player dots don't change those rounds.</div>
     </div>`);
+}
+async function setStrokeOffLow(rid,on){
+  const st=State.config.settings; st.strokeOffLow=st.strokeOffLow||{};
+  if(on) st.strokeOffLow[rid]=true; else delete st.strokeOffLow[rid];
+  await saveConfig(); renderStrokeGrid(rid);
 }
 async function cycleStroke(rid,pid,h){
   const ov=getStrokeOverride(rid,pid,h);
