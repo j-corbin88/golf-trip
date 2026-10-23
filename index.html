@@ -1089,8 +1089,17 @@ function cmpHcp(a,b){ const ha=hcpOf(a.id), hb=hcpOf(b.id); return (ha==null?999
 function cmpCapHcp(a,b){ const c=(b.isCaptain?1:0)-(a.isCaptain?1:0); return c!==0?c:cmpHcp(a,b); } // captain first, then handicap
 
 /* who can THIS device enter for, in a segment */
+function adminEditMatch(round, seg){   // the match the admin is overriding right now (this segment only), else null
+  const e=State.adminEdit; if(!State.adminAuthed || !e || !round || !seg || e.rid!==round.id || e.sid!==seg.id) return null;
+  return segMatches(seg).find(m=>m.id===e.mid)||null;
+}
 function editableSidesForSeg(round, seg){
   const sides=sidesForSeg(round, seg);
+  const am=adminEditMatch(round, seg);
+  if(am){   // admin override: every side of that match, both teams
+    const grp=FORMATS[seg.format]?.side==='group', ids=new Set([...am.a,...am.b]);
+    return sides.filter(s=>grp ? s.id.startsWith(am.id+':') : ids.has(s.id));
+  }
   if(!State.me) return [];
   const meId=State.me, cap=isCaptain(meId), myTeam=player(meId)?.teamId;
   const ms=segMatches(seg);
@@ -1796,9 +1805,23 @@ function finishSignIn(){ closeModal(); updateMeChip(); render(); }
    A dropdown at the end of the player row lists every match in the current segment; picking one opens its card, live. */
 const matchTitle = (m)=>{ const n=(ids)=>ids.map(displayName).join(' + '); return `${n(m.a)} vs ${n(m.b)}`; };
 function cardPickerHTML(seg){
-  const ms=segMatches(seg); if(ms.length<2) return '';
+  const ms=segMatches(seg);
+  if(State.adminAuthed && ms.length){   // admin: view any card, or open any match to edit it
+    const lab=(m,i)=>`Match ${i+1} · ${esc(matchTitle(m))}`;
+    const view=ms.map((m,i)=>`<option value="v:${m.id}">${lab(m,i)}</option>`).join('');
+    const edit=ms.map((m,i)=>`<option value="e:${m.id}">${lab(m,i)}</option>`).join('');
+    return `<select class="cardpick" aria-label="Other scorecards (admin)" title="Other scorecards (admin)" onchange="pickCard(this.value);this.selectedIndex=0"><option value="" selected disabled hidden>✏️</option><optgroup label="👁 View">${view}</optgroup><optgroup label="✏️ Edit (admin)">${edit}<option value="e:">Back to my own card</option></optgroup></select>`;
+  }
+  if(ms.length<2) return '';
   const opts=ms.map((m,i)=>`<option value="${m.id}">Match ${i+1} · ${esc(matchTitle(m))}</option>`).join('');
   return `<select class="cardpick" aria-label="View other scorecards" title="View other scorecards" onchange="openCardView(this.value);this.selectedIndex=0"><option value="" selected disabled hidden>👁</option>${opts}</select>`;
+}
+function pickCard(v){
+  if(!v) return;
+  if(v.startsWith('v:')) return openCardView(v.slice(2));
+  const {round,seg}=curEntryRefs();
+  State.adminEdit = v.length>2 ? {rid:round.id, sid:seg.id, mid:v.slice(2)} : null;
+  State.entrySide=null; State.pend=null; render(false);
 }
 function cardViewHTML(round, seg, m){
   const isGroup=FORMATS[seg.format]?.side==='group';
@@ -2395,7 +2418,7 @@ function viewEnter(){
   if(!State.activeRound || !rounds.find(r=>r.id===State.activeRound)) State.activeRound=rounds[0].id;
   const round=rounds.find(r=>r.id===State.activeRound);
   const roundTabsTop=`<div class="lb-round-tab">${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setEnterRound('${r.id}')">${esc(r.name)}${r.frozen?' 🔒':''}</button>`).join('')}</div>`;
-  if(round.frozen){
+  if(round.frozen && !State.adminAuthed){
     return `${roundTabsTop}<div class="card"><div class="empty"><div class="big">🔒</div><b>${esc(round.name)} is locked</b><p class="muted" style="margin-top:6px">Scores for this round have been frozen by the admin. Check the leaderboard for results.</p></div></div>`;
   }
   const segs=enterableSegs(round);
@@ -2407,7 +2430,7 @@ function viewEnter(){
   const segTabs=(segs.length>1)?`<div class="lb-round-tab" style="margin-top:-6px">${segs.map(s=>`<button class="${s.id===State.entrySeg?'on':''}" onclick="setEnterSeg('${s.id}')">${esc(s.label)} · ${FORMATS[s.format]?.label||''}${fmtInfo(s.format)}</button>`).join('')}</div>`:'';
   const c=courseOf(round), pars=c?.pars||[];
 
-  if(!editable.length) return `${roundTabs}${segTabs}<div class="card"><div class="empty"><div class="big">🔒</div><b>Nothing to enter here</b><p class="muted" style="margin-top:6px">You're not in a group for this segment. Your captain can enter for the team, or ask the admin to add you to a group.</p></div></div>`;
+  if(!editable.length) return `${roundTabs}${segTabs}${State.adminAuthed?`<div class="side-tabs nw">${cardPickerHTML(seg)}</div>`:''}<div class="card"><div class="empty"><div class="big">🔒</div><b>Nothing to enter here</b><p class="muted" style="margin-top:6px">You're not in a group for this segment. Your captain can enter for the team, or ask the admin to add you to a group.</p></div></div>`;
 
   if(!State.entrySide || !editable.find(s=>s.id===State.entrySide)){ State.entrySide=(editable.find(s=>s.id===State.me || (s.members||[]).includes(State.me))||editable[0]).id; State.entryHole=startHoleForSide(seg,State.entrySide); }
   // clamp the current hole into this segment's range (default to this side's start hole)
@@ -2473,6 +2496,7 @@ function viewEnter(){
   ${segTabs}
   <div class="muted" style="margin:-4px 2px 12px">${FORMATS[seg.format]?.label||'Format TBD'}${fmtInfo(seg.format)} · ${esc(c?.name||'Course TBD')} · ${esc(round.dateLabel)}${round.split?' · '+esc(seg.label):''}</div>
   ${sideTabs}
+  ${adminEditMatch(round,seg)?`<div class="muted" style="margin:-4px 2px 10px;font-size:12px;color:var(--gold)">✏️ Admin override — editing <b>${esc(matchTitle(adminEditMatch(round,seg)))}</b>. Tap any box to change that score; every change is logged. Use ✏️ → “Back to my own card” to exit.</div>`:''}
   <div class="card">
     <div class="mono" id="entryTotal" style="text-align:center;font-size:11px;color:var(--text-dim);margin-bottom:10px">${entryTotalHTML(card,round,seg,side.id)}</div>
     <div class="stepper">
@@ -2663,7 +2687,7 @@ function logEntry(round, seg, sideId, hole, from, to, pickup){
   try{
     const ts=Date.now();
     Store.set(`log:${round.id}:${String(ts).padStart(13,'0')}-${Math.random().toString(36).slice(2,6)}`,
-      {ts, at:new Date(ts).toISOString(), by:player(State.me)?.name||'—', byId:State.me||null, round:round.id, seg:seg?.id||null, side:sideId, hole, from:from??null, to:to??null, pickup:!!pickup, sandbox:!!State.sandbox});
+      {ts, at:new Date(ts).toISOString(), by:player(State.me)?.name||'—', byId:State.me||null, round:round.id, seg:seg?.id||null, side:sideId, hole, from:from??null, to:to??null, pickup:!!pickup, admin:!!(State.adminAuthed&&adminEditMatch(round,seg)), sandbox:!!State.sandbox});
   }catch(e){}
 }
 /* Max score per hole (gross): par + N (default par + 1). Admin can change N or switch it off. Over the max -> a warning popup. */
@@ -2696,14 +2720,14 @@ async function setMaxOverOn(on){ State.config.settings.maxOverOn=!!on; await sav
 async function setMaxFormula(key,v){ const n=Number(v); if(!Number.isFinite(n)||n<0) return renderAdmin(); State.config.settings[key]=Math.min(key==='maxMult'?5:20,n); await saveConfig(); renderAdmin(); }
 async function saveHole(v, pickup){
   const {round,key}=curEntryRefs();
-  if(round?.frozen) return; // locked
+  if(round?.frozen && !State.adminAuthed) return; // locked (admin can still correct)
   const card=State.cards[key] || {holes:{}, enteredBy:'', updatedAt:0};
   if(!card.holes) card.holes={};
   const prevVal=card.holes[State.entryHole];
   if(v==null) delete card.holes[State.entryHole]; else card.holes[State.entryHole]=v;
   if(pickup && v!=null){ card.pick=card.pick||{}; card.pick[State.entryHole]=1; } else if(card.pick){ delete card.pick[State.entryHole]; }
   logEntry(round, curEntryRefs().seg, State.entrySide, State.entryHole, prevVal, v, pickup);
-  card.enteredBy=player(State.me)?.name||'—';
+  card.enteredBy=(player(State.me)?.name||'—')+(adminEditMatch(round,curEntryRefs().seg)?' (admin)':'');
   card.updatedAt=Date.now();
   State.cards[key]=card;
   recentLocalWrite.set(key, Date.now()+20000);   // protect this key's local data for 20s — covers any sync lag without permanently ignoring other devices' updates
