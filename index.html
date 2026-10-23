@@ -1829,14 +1829,16 @@ function cardViewHTML(round, seg, m){
   const isGroup=FORMATS[seg.format]?.side==='group';
   const sideRows=(key)=> isGroup ? [{id:m.id+':'+key, label:sideLabel({kind:'group', members:m[key]})}] : m[key].map(id=>({id, label:displayName(id)}));
   const A=sideRows('a'), B=sideRows('b'), aId=A[0].id;
-  const cols=segCols(seg), pars=courseOf(round)?.pars||[];
+  const gseg=gridSegOf(round,seg), hseg=(h)=>holeSeg(round,gseg,h);   // Nassau: show the whole 18 (OUT / IN / TOT), like the entry screen
+  const cols=segCols(gseg), pars=courseOf(round)?.pars||[];
   const lbl=(t)=>`<div class="sc-plabel" title="${esc(t)}"><span>${esc(t)}</span></div>`;
   const rowOf=(hf,tf)=>cols.map(c=>c.t==='h'?hf(c.h):tf(c)).join('');
   const rowHole=lbl('')+rowOf(h=>`<div class="sc-h">${h}</div>`, c=>`<div class="sc-h sc-th">${c.lab}</div>`);
   const rowPar=lbl('Par')+rowOf(h=>`<div class="sc-box sc-par">${pars[h-1]||'—'}</div>`, c=>{ let t=0; for(let h=c.from; h<=c.to; h++) t+=pars[h-1]||0; return `<div class="sc-box sc-tot sc-par">${t||'—'}</div>`; });
-  const rows=(arr)=>arr.map(r=>lbl(r.label)+rowOf(h=>`<div class="sc-box sc-opp">${oppCellInner(round,seg,r.id,h)}</div>`, c=>`<div class="sc-box sc-tot">${totCellInner(round,seg,r.id,c)}</div>`)).join('');
+  const rows=(arr)=>arr.map(r=>lbl(r.label)+rowOf(h=>`<div class="sc-box sc-opp">${oppCellInner(round,hseg(h),r.id,h)}</div>`, c=>`<div class="sc-box sc-tot">${totCellInner(round,gseg,r.id,c)}</div>`)).join('');
   const prog=matchProgressionForSide(round,seg,aId);
-  const rowMatch=prog ? lbl('Match')+rowOf(h=>{ const {text,cls}=matchCellLabel(prog[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }, c=>matchColCell(round,seg,aId,c)) : '';
+  const progs={}; const progFor=(hs)=> (progs[hs.id] ??= (personalMatchStatus(round,hs,aId) ? matchProgressionForSide(round,hs,aId) : null));
+  const rowMatch=prog ? lbl('Match')+rowOf(h=>{ const pr=progFor(hseg(h)); if(!pr) return '<div class="sc-box sc-match"></div>'; const {text,cls}=matchCellLabel(pr[h]); return `<div class="sc-box sc-match ${cls}">${text}</div>`; }, c=>matchColCell(round,seg,aId,c)) : '';
   const st=personalMatchStatus(round,seg,aId);
   const aName=A.map(r=>r.label).join(' + ');
   const n=segMatches(seg).findIndex(x=>x.id===m.id)+1;
