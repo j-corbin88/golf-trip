@@ -185,7 +185,12 @@ input,select{font-family:inherit;font-size:16px}
 .sc-match.win{background:#dff3df;color:#1f6b23}
 .sc-match.lose{background:#f7e3e1;color:#a23a30}
 .sc-match.as{background:#fbf0d6;color:#8a6a10}
-.esum{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px;margin:0 0 14px}
+.esum{display:grid;grid-template-columns:minmax(0,.95fr) minmax(0,1.6fr);gap:8px;margin:0 0 14px}
+.esum-hd{font-family:'Oswald';font-size:8.5px;letter-spacing:0;text-transform:uppercase;color:rgba(237,231,214,.55);line-height:1.2;margin:-2px 0 1px}
+.esum-c{flex:none;width:32px;text-align:right}
+.esum-box:last-child .esum-nm{font-size:13px}
+.esum-row b.esum-c{font-size:17px}
+.esum-hd .esum-c{font-weight:500;text-align:center}
 .esum-box{min-width:0;background:rgba(237,231,214,.07);border:1px solid rgba(237,231,214,.16);border-radius:12px;padding:9px 12px;cursor:pointer}
 .esum-h{font-family:'Oswald';font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .esum-row{display:flex;align-items:center;gap:7px;font-size:14px;line-height:1.55;color:var(--light)}
@@ -1373,20 +1378,19 @@ function pointsAvailable(){
   return n;
 }
 function pointsToClinch(){ const a=pointsAvailable(); return a>0 ? a/2 + 0.5 : 0; }
-function addRoundPoints(pts, r){
-  segsOf(r).forEach(seg=>{
-    if(!seg.format) return;
-    const w=segWeight(seg);
-    const isAgg=FORMATS[seg.format]?.scoring==='aggregate';
-    segMatches(seg).forEach(m=>{
-      const sp=isAgg ? aggPointSplit(computeAggregateMatch(r,seg,m)) : matchPointSplit(computeMatch(r,seg,m));
-      if(!sp) return;
-      const aT=teamOfSide(m.a), bT=teamOfSide(m.b);
-      if(aT) pts[aT]=(pts[aT]||0)+sp.a*w;
-      if(bT) pts[bT]=(pts[bT]||0)+sp.b*w;
-    });
+function addSegPoints(pts, r, seg){
+  if(!seg.format) return;
+  const w=segWeight(seg);
+  const isAgg=FORMATS[seg.format]?.scoring==='aggregate';
+  segMatches(seg).forEach(m=>{
+    const sp=isAgg ? aggPointSplit(computeAggregateMatch(r,seg,m)) : matchPointSplit(computeMatch(r,seg,m));
+    if(!sp) return;
+    const aT=teamOfSide(m.a), bT=teamOfSide(m.b);
+    if(aT) pts[aT]=(pts[aT]||0)+sp.a*w;
+    if(bT) pts[bT]=(pts[bT]||0)+sp.b*w;
   });
 }
+function addRoundPoints(pts, r){ segsOf(r).forEach(seg=>addSegPoints(pts, r, seg)); }
 function roundPoints(r){ const pts={}; (State.config.teams||[]).forEach(t=>pts[t.id]=0); addRoundPoints(pts,r); return pts; }
 function tripPoints(){
   const pts={}; (State.config.teams||[]).forEach(t=>pts[t.id]=0);
@@ -1417,12 +1421,23 @@ function enterSummaryHTML(){
   const teams=State.config.teams||[]; const live=liveRound();
   if(teams.length<2 || !live) return '<div id="entrySummary"></div>';
   const [A,B]=teams;
+  // Live round: one column per segment (Nassau = Front / Back / Total) so you can see who has what on the day
+  const segBox=(title,r,onTap)=>{
+    const cols=segsOf(r).filter(sg=>sg.format).map(sg=>{ const pts={}; teams.forEach(t=>pts[t.id]=0); addSegPoints(pts,r,sg); return {lab:String(sg.label||'').replace(/\s*9$/,'')||'Round', pts}; });
+    if(cols.length<2) return null;
+    const row=(T)=>{ const vals=cols.map(c=>c.pts[T.id]||0), other=cols.map(c=>c.pts[(T===A?B:A).id]||0);
+      return `<div class="esum-row"><span class="esum-dot" style="background:${T.color}"></span><span class="esum-nm">${esc(String(T.name).replace(/^team\s+/i,''))}</span>${vals.map((v,i)=>`<b class="esum-c ${v>other[i]?'lead':''}">${fmtPts(v)}</b>`).join('')}</div>`; };
+    const head=`<div class="esum-row esum-hd"><span class="esum-dot" style="visibility:hidden"></span><span class="esum-nm"></span>${cols.map(c=>`<span class="esum-c">${esc(c.lab)}</span>`).join('')}</div>`;
+    return `<div class="esum-box" onclick="${onTap}"><div class="esum-h">${esc(title)}</div>${head}${row(A)}${row(B)}</div>`;
+  };
   const box=(title,pts,onTap)=>{
     const a=pts[A.id]||0, b=pts[B.id]||0;
-    const row=(T,v,lead)=>`<div class="esum-row"><span class="esum-dot" style="background:${T.color}"></span><span class="esum-nm">${esc(T.name)}</span><b class="${lead?'lead':''}">${fmtPts(v)}</b></div>`;
+    const row=(T,v,lead)=>`<div class="esum-row"><span class="esum-dot" style="background:${T.color}"></span><span class="esum-nm">${esc(String(T.name).replace(/^team\s+/i,''))}</span><b class="${lead?'lead':''}">${fmtPts(v)}</b></div>`;
     return `<div class="esum-box" onclick="${onTap}"><div class="esum-h">${esc(title)}</div>${row(A,a,a>b)}${row(B,b,b>a)}</div>`;
   };
-  return `<div class="esum" id="entrySummary">${box('Weekend',tripPoints(),"go('board')")}${box(live.isToday?'Today · '+live.round.name:live.round.name,roundPoints(live.round),"go('board')")}</div>`;
+  const liveTitle=live.isToday?'Today · '+live.round.name:live.round.name;
+  const right=segBox(liveTitle,live.round,"go('board')") || box(liveTitle,roundPoints(live.round),"go('board')");
+  return `<div class="esum" id="entrySummary">${box('Weekend',tripPoints(),"go('board')")}${right}</div>`;
 }
 // count of scorable segments across the trip (for the "x of y" footer)
 function liveSegCount(){ let n=0; (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>segsOf(r).forEach(s=>{ if(s.format) n++; })); return n; }
