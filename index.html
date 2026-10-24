@@ -520,7 +520,7 @@ const FORMATS = {
   betterball:{ label:'Better Ball',  side:'player', scoring:'match',     perSide:2, blurb:'Partners each play their own ball; the team counts the lower net score on each hole.' },
   shramble:  { label:'Shramble',     side:'player', scoring:'match',     perSide:2, blurb:'Team plays the best drive, then everyone plays their own ball in from there.' },
   scramble:  { label:'Scramble',     side:'group',  scoring:'match',     perSide:2, blurb:'Team plays one ball — best shot every time. One score per side, per hole.' },
-  teamtotal: { label:'Team Total',   side:'player', scoring:'aggregate', perSide:2, blurb:'Everyone plays their own ball. Players are paired into twosomes — in each match, the two players\' combined net is compared against the opposing twosome\'s combined net, and the lower total wins that match\'s point.' },
+  teamtotal: { label:'Team Total',   side:'player', scoring:'match',     perSide:2, combine:true, blurb:'Everyone plays their own ball. Each twosome adds its two players\' net scores on every hole; the lower combined net wins the hole. Most holes won takes the match point.' },
 };
 
 const AVATARS = ['⛳','🏌️','🏆','🎯','🦅','🐦','🍺','🥃','🚌','🕶️','🧢','🐐','🦈','🐊','🐅','🐯','🦍','🦏','🐺','🦁','🎩','👑','🃏','🎣','🐷','🦌','🍔','🌭','🏴‍☠️','⚡','🔥','💣','🎸','🎲','🚀','🛥️','🌊','🏖️','☕','🥩'];
@@ -543,7 +543,7 @@ function formatDetailNote(key){
     betterball:`2-v-2 match play at ${pct('betterball')}% allowance; each hole the team takes the better net (dots included) of the two partners.`,
     shramble:`2-v-2 match play at ${pct('shramble')}% allowance. Best drive off the tee, then each partner plays their own ball in; low net wins the hole.`,
     scramble:`Match play, one ball per side. Side handicap: ${scrambleMethodLabel()}.`,
-    teamtotal:`Match play aggregate — in each match, the twosome's combined net is compared with the opposing twosome's; lower total wins that match's point.`,
+    teamtotal:`Match play on combined score — each twosome adds its two players' net scores on every hole; the lower combined net wins the hole. Most holes won takes the match point.`,
   };
   return map[key]||'';
 }
@@ -1171,6 +1171,12 @@ function matchValFns(round, seg, match){
     bVal=(h)=>{ const rid=segIdForHole(round,seg,h); const card=State.cards[cardKey(round.id,rid,match.id+':b')]; return card?.holes?.[h]!=null ? card.holes[h]-strokesOnHole(bStk,si[h-1])+(isPick(card,h)?PK:0) : null; };
   } else {
     // Individual formats: each player plays their own strokes from the sheet; low net wins the hole
+    if(FORMATS[fmt]?.combine){   // Team Total: the twosome's two net scores added together, hole by hole (needs both scores)
+      const sumNet=(ids,h)=>{ let sum=0, pk=false; const rid=segIdForHole(round,seg,h);
+        for(const id of ids){ const cd=State.cards[cardKey(round.id,rid,id)]; const g=cd?.holes?.[h]; if(g==null) return null; sum+=g-strokeSheet(id,round,h); if(isPick(cd,h)) pk=true; }
+        return ids.length ? sum+(pk?PK:0) : null; };
+      return {aVal:(h)=>sumNet(match.a,h), bVal:(h)=>sumNet(match.b,h), isGroup:false};
+    }
     const bestNet=(ids,h)=>{ let best=null; const rid=segIdForHole(round,seg,h); ids.forEach(id=>{ const cd=State.cards[cardKey(round.id,rid,id)]; const g=cd?.holes?.[h]; if(g!=null){ const nt=g-strokeSheet(id,round,h)+(isPick(cd,h)?PK:0); if(best==null||nt<best) best=nt; } }); return best; };
     aVal=(h)=>bestNet(match.a,h); bVal=(h)=>bestNet(match.b,h);
   }
@@ -3595,7 +3601,7 @@ async function setSegFormat(rid, segId, val){
   const r=State.config.rounds.find(x=>x.id===rid);
   const seg=segsOf(r).find(s=>s.id===segId); if(seg){ seg.format=val; if(!seg.matches) seg.matches=[];
     // Team Total only works as twosome-vs-twosome matches, so pair them up automatically (admin can still edit)
-    if(FORMATS[val]?.scoring==='aggregate' && !seg.matches.length && State.config.teams?.length>=2){
+    if((FORMATS[val]?.scoring==='aggregate'||FORMATS[val]?.combine) && !seg.matches.length && State.config.teams?.length>=2){
       const per=perSideFor(val), a=teamRoster(State.config.teams[0].id).map(p=>p.id), b=teamRoster(State.config.teams[1].id).map(p=>p.id);
       for(let k=0;k<Math.min(Math.floor(a.length/per),Math.floor(b.length/per));k++) seg.matches.push({id:newMatchId(), a:a.slice(k*per,k*per+per), b:b.slice(k*per,k*per+per)});
     }
