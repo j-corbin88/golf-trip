@@ -1889,7 +1889,7 @@ function pickCard(v){
   State.adminEdit = v.length>2 ? {rid:round.id, sid:seg.id, mid:v.slice(2)} : null;
   State.entrySide=null; State.pend=null; render(false);
 }
-function cardViewHTML(round, seg, m){
+function cardViewHTML(round, seg, m, inline){
   const isGroup=FORMATS[seg.format]?.side==='group';
   const sideRows=(key)=> isGroup ? [{id:m.id+':'+key, label:sideLabel({kind:'group', members:m[key]})}] : m[key].map(id=>({id, label:displayName(id)}));
   const A=sideRows('a'), B=sideRows('b'), aId=A[0].id;
@@ -1906,13 +1906,13 @@ function cardViewHTML(round, seg, m){
   const st=personalMatchStatus(round,seg,aId);
   const aName=A.map(r=>r.label).join(' + ');
   const n=segMatches(seg).findIndex(x=>x.id===m.id)+1;
-  return `<div class="cardview">
+  return `<div class="${inline?'card ':''}cardview">
     <div class="modal-h"><h2>Match ${n}</h2><p class="cv-sub">${esc(matchTitle(m))} · ${esc(round.name)}${round.split?' · '+esc(seg.label):''}</p>
       ${st?`<span class="cv-stat ${st.cls||''}">${esc(aName)}: ${st.main}${st.sub?' · '+st.sub:''}</span>`:''}</div>
     <div class="modal-b">
       <div class="sc-scroll" style="margin-top:6px"><div class="sc-table" style="grid-template-columns:86px ${cols.map(c=>c.t==='h'?'44px':'62px').join(' ')}">${rowHole}${rowPar}${rows(A)}${rows(B)}${rowMatch}</div></div>
       <div class="muted" style="font-size:11px;margin:-6px 2px 12px">View only — updates live. The Match row is from ${esc(aName)}'s side (UP = they're ahead). Red numbers are strokes received; 🔥 = Fireball.</div>
-      <button class="btn ghost" onclick="closeModal()">Close</button>
+      ${inline?'':'<button class="btn ghost" onclick="closeModal()">Close</button>'}
     </div></div>`;
 }
 function openCardView(mid){
@@ -2487,8 +2487,15 @@ function viewEnter(){
   if(!State.activeRound || !rounds.find(r=>r.id===State.activeRound)) State.activeRound=rounds[0].id;
   const round=rounds.find(r=>r.id===State.activeRound);
   const roundTabsTop=`<div class="lb-round-tab">${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setEnterRound('${r.id}')">${esc(r.name)}${r.frozen?' 🔒':''}</button>`).join('')}</div>`;
-  if(round.frozen && !State.adminAuthed){
-    return `${roundTabsTop}<div class="card"><div class="empty"><div class="big">🔒</div><b>${esc(round.name)} is locked</b><p class="muted" style="margin-top:6px">Scores for this round have been frozen by the admin. Check the leaderboard for results.</p></div></div>`;
+  if(round.frozen && !State.adminAuthed){   // locked: nobody can enter, but everyone can still see their own card (and the other matches)
+    const fsegs=enterableSegs(round), vsegs=round.nassau ? fsegs.slice(0,1) : fsegs;   // Nassau: one 18-hole card covers both nines
+    if(!State.entrySeg || !vsegs.find(s=>s.id===State.entrySeg)) State.entrySeg=vsegs[0].id;
+    const vseg=vsegs.find(s=>s.id===State.entrySeg);
+    const lockNote=`<div class="muted" style="margin:-4px 2px 12px">🔒 ${esc(round.name)} is locked — scores are final. Your card is below.</div>`;
+    const vTabs=(vsegs.length>1)?`<div class="lb-round-tab" style="margin-top:-6px">${vsegs.map(s=>`<button class="${s.id===State.entrySeg?'on':''}" onclick="setEnterSeg('${s.id}')">${esc(s.label)} · ${FORMATS[s.format]?.label||''}</button>`).join('')}</div>`:'';
+    const mine=segMatches(vseg).find(m=>[...m.a,...m.b].includes(State.me));
+    const picker=cardPickerHTML(vseg);
+    return `${roundTabsTop}${lockNote}${vTabs}${picker?`<div class="side-tabs nw">${picker}</div>`:''}${mine?cardViewHTML(round,vseg,mine,true):`<div class="card"><div class="empty"><div class="big">🔒</div><b>You weren't in a match here</b><p class="muted" style="margin-top:6px">${picker?'Use the 👁 menu to look at any match.':'Check the leaderboard for results.'}</p></div></div>`}`;
   }
   const segs=enterableSegs(round);
   if(!State.entrySeg || !segs.find(s=>s.id===State.entrySeg)) State.entrySeg=segs[0].id;
