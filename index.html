@@ -1182,7 +1182,15 @@ function matchValFns(round, seg, match){
   }
   return {aVal,bVal,isGroup};
 }
+// Admin-set result for a match (when scores were never entered): 'a' | 'b' | 'half' | null. Stored in config.matchResults.
+const matchResultKey=(round,seg,m)=>`${round?.id}:${seg?.id}:${m?.id}`;
+const matchOverride=(round,seg,m)=> State.config?.matchResults?.[matchResultKey(round,seg,m)] || null;
 function computeMatch(round, seg, match){
+  const res=computeMatchRaw(round, seg, match), ov=matchOverride(round,seg,match);
+  if(!ov) return res;
+  return {...res, played:Math.max(res.played,1), remaining:0, final:true, diff: ov==='a'?1:ov==='b'?-1:0, override:ov};
+}
+function computeMatchRaw(round, seg, match){
   const {aVal,bVal}=matchValFns(round, seg, match);
   let aUp=0,bUp=0,played=0;
   for(let h=seg.start; h<=seg.end; h++){ const a=aVal(h), b=bVal(h); if(a==null||b==null) continue; played++; const cv=cmpVals(a,b); if(cv<0)aUp++; else if(cv>0)bUp++; }
@@ -1223,6 +1231,7 @@ function matchStatusText(res){
   const p=matchStatusParts(res); return p.sub?`${p.main} · ${p.sub}`:p.main;
 }
 function matchStatusParts(res){
+  if(res.override) return res.override==='half' ? {main:'Halved', sub:'set by admin'} : {main:'Won', sub:'set by admin'};
   if(res.played===0) return {main:'—'};
   const u=Math.abs(res.diff);
   if(res.diff===0) return res.remaining===0 ? {main:'Halved'} : {main:'AS', sub:`thru ${res.played}`};
@@ -1270,6 +1279,7 @@ function personalMatchStatus(round, seg, sideId){
     return {main:`${diff>0?'+':''}${diff} strokes`, sub, cls:diff>0?'win':'lose'};
   }
   const res=computeMatch(round, seg, m);
+  if(res.override){ const imA0=entrySideOfMatch(seg, sideId, m)==='a'; return res.override==='half' ? {main:'Halved', sub:'set by admin', cls:'half'} : ((res.override==='a')===imA0 ? {main:'Won', sub:'set by admin', cls:'win'} : {main:'Lost', sub:'set by admin', cls:'lose'}); }
   if(res.played===0) return {main:'Match not started yet', sub:'', cls:''};
   const imA=entrySideOfMatch(seg, sideId, m)==='a';
   const myDiff=imA?res.diff:-res.diff, u=Math.abs(myDiff);
@@ -1843,15 +1853,38 @@ function cardPickerHTML(seg){
     const lab=(m,i)=>`Match ${i+1} · ${esc(matchTitle(m))}`;
     const view=ms.map((m,i)=>`<option value="v:${m.id}">${lab(m,i)}</option>`).join('');
     const edit=ms.map((m,i)=>`<option value="e:${m.id}">${lab(m,i)}</option>`).join('');
-    return `<select class="cardpick" aria-label="Other scorecards (admin)" title="Other scorecards (admin)" onchange="pickCard(this.value);this.selectedIndex=0"><option value="" selected disabled hidden>✏️</option><optgroup label="👁 View">${view}</optgroup><optgroup label="✏️ Edit (admin)">${edit}<option value="e:">Back to my own card</option></optgroup></select>`;
+    return `<select class="cardpick" aria-label="Other scorecards (admin)" title="Other scorecards (admin)" onchange="pickCard(this.value);this.selectedIndex=0"><option value="" selected disabled hidden>✏️</option><optgroup label="👁 View">${view}</optgroup><optgroup label="✏️ Edit (admin)">${edit}<option value="e:">Back to my own card</option></optgroup><optgroup label="🏆 Set result (admin)">${ms.map((m,i)=>`<option value="r:${m.id}">${lab(m,i)}</option>`).join('')}</optgroup></select>`;
   }
   if(ms.length<2) return '';
   const opts=ms.map((m,i)=>`<option value="${m.id}">Match ${i+1} · ${esc(matchTitle(m))}</option>`).join('');
   return `<select class="cardpick" aria-label="View other scorecards" title="View other scorecards" onchange="openCardView(this.value);this.selectedIndex=0"><option value="" selected disabled hidden>👁</option>${opts}</select>`;
 }
+function openResultModal(mid){
+  const {round}=curEntryRefs(); if(!round||!State.adminAuthed) return;
+  const T=State.config.teams||[];
+  const tn=(ids)=>{ const t=T.find(x=>x.id===teamOfSide(ids)); return t?t.name:'Side'; };
+  const rows=segsOf(round).filter(sg=>sg.format).map(sg=>{
+    const m=segMatches(sg).find(x=>x.id===mid); if(!m) return '';
+    const ov=matchOverride(round,sg,m), raw=computeMatchRaw(round,sg,m);
+    const names=(ids)=>ids.map(id=>displayName(id)).join(' + ');
+    const btn=(val,label)=>`<button class="btn ${ov===val?'gold':'ghost'} sm" style="flex:1;min-width:0;white-space:normal;line-height:1.2;padding:8px 6px" onclick="setMatchResult('${round.id}','${sg.id}','${m.id}','${val}')">${label}</button>`;
+    return `<div style="margin:0 0 14px"><div class="eyebrow">${esc(sg.label)}${sg.agg?' (18-hole match)':''} · ${esc(FORMATS[sg.format]?.label||'')}</div>
+      <div class="muted" style="font-size:12px;margin:0 0 6px">Scores say: ${raw.played?esc(matchStatusText(raw)):'not started'}${ov?' · <b style="color:var(--gold)">admin result in effect</b>':''}</div>
+      <div style="display:flex;gap:6px">${btn('a',esc(tn(m.a))+'<br><span style="font-weight:400;font-size:11px">'+esc(names(m.a))+'</span>')}${btn('half','Halved')}${btn('b',esc(tn(m.b))+'<br><span style="font-weight:400;font-size:11px">'+esc(names(m.b))+'</span>')}</div>
+      ${ov?`<button class="btn ghost sm" style="margin-top:6px;width:100%" onclick="setMatchResult('${round.id}','${sg.id}','${m.id}','')">Clear — use the scores</button>`:''}</div>`;
+  }).join('');
+  showModal(`<div class="modal-h"><h2>🏆 Set match result</h2><p class="muted" style="margin:4px 0 0">Pick who won each segment of this match. It overrides the scores for points and the leaderboard, and shows “set by admin”. Clear it to go back to the scores.</p></div><div class="modal-b">${rows||'<div class="muted">No match found.</div>'}<button class="btn ghost" style="margin-top:6px" onclick="closeModal();render(false)">Done</button></div>`);
+}
+async function setMatchResult(rid,sid,mid,val){
+  State.config.matchResults=State.config.matchResults||{};
+  const key=`${rid}:${sid}:${mid}`;
+  if(val) State.config.matchResults[key]=val; else delete State.config.matchResults[key];
+  await saveConfig(); openResultModal(mid);
+}
 function pickCard(v){
   if(!v) return;
   if(v.startsWith('v:')) return openCardView(v.slice(2));
+  if(v.startsWith('r:')) return openResultModal(v.slice(2));
   const {round,seg}=curEntryRefs();
   State.adminEdit = v.length>2 ? {rid:round.id, sid:seg.id, mid:v.slice(2)} : null;
   State.entrySide=null; State.pend=null; render(false);
