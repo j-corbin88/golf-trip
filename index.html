@@ -320,7 +320,7 @@ input,select{font-family:inherit;font-size:16px}
 .greset{flex:none;width:32px;background:transparent;color:var(--text-dim);border:none;border-left:1px solid var(--line);font-size:15px;cursor:pointer}
 .grow.ghead .greset{background:var(--paper2)}
 .seg-toggle{display:flex;background:rgba(255,255,255,.06);border-radius:999px;padding:3px;margin-bottom:14px;gap:3px}
-.seg-toggle button{flex:1;padding:8px;border-radius:999px;font-size:13px;font-weight:600;color:rgba(237,231,214,.6)}
+.seg-toggle button{flex:1 1 auto;padding:8px 6px;border-radius:999px;font-size:12.5px;font-weight:600;color:rgba(237,231,214,.6);white-space:nowrap}
 .seg-toggle button.on{background:var(--gold);color:var(--ink)}
 .draft-board{display:flex;gap:10px}
 .draft-col{flex:1;background:var(--paper);border-radius:12px;overflow:hidden;box-shadow:var(--shadow);border:2px solid transparent;min-width:0}
@@ -2128,9 +2128,10 @@ function boardBodyHTML(){
     ${rounds.map(r=>`<button class="${State.activeRound===r.id?'on':''}" onclick="setRound('${r.id}')">${esc(r.name)}${r.split?' · split':''}</button>`).join('')}
   </div>`:'';
   const toggle=rounds.length?`<div class="seg-toggle">
-    <button class="${(State.boardMode!=='players'&&State.boardMode!=='mulls')?'on':''}" onclick="setBoardMode('matches')">Matches</button>
+    <button class="${(State.boardMode!=='players'&&State.boardMode!=='mulls'&&State.boardMode!=='points')?'on':''}" onclick="setBoardMode('matches')">Matches</button>
     <button class="${State.boardMode==='players'?'on':''}" onclick="setBoardMode('players')">Players</button>
-    <button class="${State.boardMode==='mulls'?'on':''}" onclick="setBoardMode('mulls')">🔥 Mulligans</button>
+    <button class="${State.boardMode==='points'?'on':''}" onclick="setBoardMode('points')">Points</button>
+    <button class="${State.boardMode==='mulls'?'on':''}" onclick="setBoardMode('mulls')">🔥 Mulls</button>
   </div>`:'';
   let body='';
   const active=cfg.rounds.find(r=>r.id===State.activeRound && roundLive(r)) || rounds[0];
@@ -2138,6 +2139,8 @@ function boardBodyHTML(){
     body=`<div class="card"><div class="empty"><div class="big">🏁</div><b>No rounds live yet</b><p class="muted" style="margin-top:6px">Once the admin assigns a format to a day, standings show up here.</p></div></div>`;
   } else if(State.boardMode==='mulls'){
     return toggle+mullBoard(rounds);
+  } else if(State.boardMode==='points'){
+    return toggle+pointsBoard(rounds);
   } else if(State.boardMode==='players'){
     body=playerBoard(active);
   } else if(active){
@@ -2147,6 +2150,45 @@ function boardBodyHTML(){
     ? `<div class="banner">Individual net across this round's holes. Scramble holes are team-only, so they don't appear here.</div>`
     : `<div class="banner">Match play: within each match the low handicap plays off scratch and the rest get the difference by stroke index. 1 point per match, ½ for a halve. Segments without pairings fall back to a provisional net total.</div>`;
   return tabs+toggle+body+banner;
+}
+// Individual match points: every player on a winning side earns that match's point (½ for a halve, times the
+// segment's weight) — a singles match counts only for that one player, a doubles win counts for both partners.
+function playerPointStats(rounds){
+  const out={};
+  const rec=(id,rid,pts,res)=>{ const o=out[id]||(out[id]={pts:0,w:0,l:0,h:0,by:{}}); o.pts+=pts; o.by[rid]=(o.by[rid]||0)+pts; if(res==='w')o.w++; else if(res==='l')o.l++; else o.h++; };
+  rounds.forEach(r=>segsOf(r).forEach(seg=>{
+    if(!seg.format) return;
+    const w=segWeight(seg), isAgg=FORMATS[seg.format]?.scoring==='aggregate';
+    segMatches(seg).forEach(m=>{
+      const sp=isAgg ? aggPointSplit(computeAggregateMatch(r,seg,m)) : matchPointSplit(computeMatch(r,seg,m));
+      if(!sp) return;
+      const res=(mine,theirs)=> mine>theirs?'w':(mine<theirs?'l':'h');
+      m.a.forEach(id=>rec(id,r.id,sp.a*w,res(sp.a,sp.b)));
+      m.b.forEach(id=>rec(id,r.id,sp.b*w,res(sp.b,sp.a)));
+    });
+  }));
+  return out;
+}
+function pointsBoard(rounds){
+  const stats=playerPointStats(rounds), all=(State.config.players||[]);
+  const ranked=all.filter(p=>stats[p.id]).sort((a,b)=>stats[b.id].pts-stats[a.id].pts||stats[b.id].w-stats[a.id].w||String(a.name).localeCompare(b.name));
+  const none=all.filter(p=>!stats[p.id]);
+  const f=(n)=> fmtPts(n);
+  const rows=ranked.map((p,i)=>{
+    const t=team(p.teamId), s=stats[p.id];
+    const by=rounds.map(r=>s.by[r.id]!=null?`${esc(r.name.replace(/^Round\s*/i,'R'))}: ${f(s.by[r.id])}`:'').filter(Boolean).join(' · ');
+    return `<div class="row">
+      <div style="width:18px;text-align:center;font-family:'Oswald';font-weight:700;color:var(--text-dim)">${i+1}</div>
+      <div class="teamdot" style="background:${t?.color||'#999'}"></div>
+      <div class="av" style="border-color:${t?.color||'transparent'}">${avatarOf(p.id)}</div>
+      <div class="nm"><b>${esc(p.name)}</b><span>${s.w}-${s.l}-${s.h}${by?' · '+by:''}</span></div>
+      <div class="sc">${f(s.pts)}</div>
+    </div>`;
+  }).join('');
+  const body=ranked.length ? rows+(none.length?`<div class="muted" style="margin-top:10px;font-size:12px">No match points yet: ${none.map(p=>esc(displayName(p.id))).join(', ')}</div>`:'')
+    : `<div class="empty" style="padding:16px"><div class="big">🏆</div><p class="muted" style="margin-top:4px">No matches have been played yet.</p></div>`;
+  return `<div class="card"><div class="eyebrow">Match points · whole weekend</div>${body}
+    <div class="muted" style="margin-top:10px;font-size:11px">Every player on the winning side earns the match point (½ each for a halve), so a doubles win counts for both partners and a singles match counts only for that player. Record is W-L-H. Matches still in progress count as they stand right now.</div></div>`;
 }
 function mullStats(rounds){
   const players={};
