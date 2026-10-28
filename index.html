@@ -571,14 +571,14 @@ const Store = (() => {
     async rawSet(key,value){ return this._set(key,value,true); },
     async _set(key,value,raw){
       if(typeof State!=='undefined' && State.demo) return null;   // demo preview must never touch the real store
-      if(!raw && typeof State!=='undefined' && State.archive) return null;   // an archived year is read-only
+      if(!raw && typeof State!=='undefined' && State.archive && !State.adminAuthed) return null;   // an archived year is read-only — except for the signed-in admin
       if(!key.startsWith('log:') && !key.includes(':log:')) lsSet(key,value);   // audit-trail records are write-only — no need to keep a local copy
       outbox.set(key,{op:'set',value}); saveOutbox(); notify();
       return queuedWrite(key,'set',value);
     },
     async del(key0){
       const key=YP+key0;
-      if(typeof State!=='undefined' && (State.demo || State.archive)) return null;   // demo preview / archived year must never touch the real store
+      if(typeof State!=='undefined' && (State.demo || (State.archive && !State.adminAuthed))) return null;   // demo preview / archived year (unless admin) must never touch the real store
       lsDel(key); outbox.set(key,{op:'del'}); saveOutbox(); notify();
       return queuedWrite(key,'del',null);
     },
@@ -1574,6 +1574,7 @@ function liveSegCount(){ let n=0; (State.config.rounds||[]).filter(r=>!r.test).f
 function totalSegCount(){ let n=0; (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>n+=segsOf(r).length); return n; }
 const roundLive = (r)=> segsOf(r).some(s=>s.format);
 // the round everyone should land on: the first live round that isn't locked yet (else the last live one)
+const roundFrozen=(r)=> State.archive ? !!State.origFrozen?.[r.id] : !!r.frozen;   // archived years display every round locked; this is the real flag
 const currentRound = (cfg)=>{ const live=(cfg.rounds||[]).filter(r=>roundLive(r)); return live.find(r=>!r.frozen) || live[live.length-1] || (cfg.rounds||[])[0]; };
 const liveSegs = (r)=> segsOf(r).filter(s=>s.format);
 // segments a player can actually enter scores into — excludes agg (derived) segments like a
@@ -1592,7 +1593,14 @@ async function loadYears(){
   State.year=ent.year; YP=ent.prefix||''; State.archive=(State.year!==State.currentYear);
 }
 // Archived years are read-only: lock every round in memory (writes are also blocked in the Store), so everyone sees the final cards.
-function applyArchive(){ if(State.archive && State.config) (State.config.rounds||[]).forEach(r=>{ r.frozen=true; }); }
+// An archived year shows every round as locked for everyone but the admin. That lock lives in memory only — we remember each round's real
+// frozen flag so saving an edit as admin never writes the display lock into the stored year.
+const _archForced=new WeakSet();
+function applyArchive(){
+  if(!(State.archive && State.config)) return;
+  State.origFrozen=State.origFrozen||{};
+  (State.config.rounds||[]).forEach(r=>{ if(!_archForced.has(r)){ State.origFrozen[r.id]=!!r.frozen; _archForced.add(r); } r.frozen=true; });
+}
 // A brand-new year: the same settings, scoring formats and round structure, but no players, teams, pairings, scores or handicaps.
 function newYearConfig(prev, year){
   const def=DEFAULT_CONFIG(), ps=(prev&&prev.settings)||def.settings;
@@ -1950,7 +1958,7 @@ function stYearView(S){
     cup=`<div style="display:flex;align-items:center;gap:6px;margin:6px 0 4px">${big(w.a,w.pa)}<div style="color:var(--text-dim);font-weight:700">–</div>${big(w.b,w.pb)}</div>
       <div style="text-align:center;font-weight:700;margin-bottom:12px">${w.done?(w.w?`🏆 ${esc(w.w.name)} take the Cup`:'🤝 Tied'):'⏳ In progress'}</div>`;
   }
-  const open=S.open||[], canSet=!State.archive && State.year===S.year && State.adminAuthed;
+  const open=S.open||[], canSet=State.year===S.year && State.adminAuthed;
   const openCard=open.length?`<div class="card"><div class="eyebrow">⏳ Unfinished matches (${open.length})</div>${unfinishedRows(open,canSet,false)}<div class="muted" style="font-size:11px;margin-top:8px">Matches with some scores count for whoever is ahead so far; ones with no scores aren't counted yet.${canSet?'':' The commissioner can set a result in Admin.'}</div></div>`:'';
   const race=S.rounds.filter(r=>r.segs.length).map(r=>{
     const tot=T.reduce((t,x)=>t+(r.team[x.id]||0),0);
@@ -2021,13 +2029,11 @@ async function stLoad(){
   const ents=[...reg.years].sort((a,b)=>b.year-a.year);
   StatsUI.years=await Promise.all(ents.map(async e=>{
     const cur=e.year===State.currentYear;
-    if(!cur && _stCache[e.year]) return _stCache[e.year];
     try{
       const d=await statsLoadYear(e);
       if(!d) return {year:e.year,label:e.label||'',has:false,teams:[],players:{},rounds:[],cup:{},recRounds:[],recHoles:[],fmtRec:{}};
       const S=computeYearStats(d); S.label=d.cfg.settings?.tripSub||e.label||'';
       if(!cur && S.has) S.complete=true;   // a past year is over, even if a match or two never got a result
-      if(!cur) _stCache[e.year]=S;
       return S;
     }catch(err){ console.warn('stats',e.year,err); return {year:e.year,label:e.label||'',has:false,teams:[],players:{},rounds:[],cup:{},recRounds:[],recHoles:[],fmtRec:{}}; }
   }));
@@ -2052,7 +2058,7 @@ function closeStats(){
 function updateArchiveBar(){
   const bar=document.getElementById('archiveBar'); if(!bar) return;
   bar.classList.toggle('hidden', !State.archive);
-  const t=document.getElementById('archiveTxt'); if(t) t.textContent=`📚 ${State.year} — archived, read-only`;
+  const t=document.getElementById('archiveTxt'); if(t) t.textContent=`📚 ${State.year} — archived${State.adminAuthed?' (admin can edit)':' · read-only'}`;
   const b=document.getElementById('archiveBtn'); if(b) b.textContent=`Go to ${State.currentYear}`;
   document.title = (State.archive?`${State.year} · `:'') + 'The Cup';
 }
@@ -4011,7 +4017,6 @@ function renderAdminGuide(){
     </div>`);
 }
 function openAdmin(){
-  if(State.archive){ showModal(`<div class="modal-h"><h2>${State.year} is archived</h2><p class="muted" style="margin:4px 0 0">Past years are read-only. Switch to ${State.currentYear} from the ☰ menu to manage the current trip.</p></div><div class="modal-b"><button class="btn gold" onclick="goYear(State.currentYear)">Go to ${State.currentYear}</button><button class="btn ghost" style="margin-top:8px" onclick="closeModal()">Close</button></div>`); return; }
   if(State.adminAuthed) return renderAdmin();
   showModal(`<div class="modal-h"><h2>Admin PIN</h2><p class="muted" style="margin:4px 0 0">Enter the organizer's PIN to manage the trip.</p></div>
     <div class="modal-b">
@@ -4022,7 +4027,7 @@ function openAdmin(){
 }
 function checkPin(){
   const v=$('#pinInput').value.trim();
-  if(v===String(State.config.settings.adminPin)){ State.adminAuthed=true; renderAdmin(); }
+  if(v===String(State.config.settings.adminPin)){ State.adminAuthed=true; updateArchiveBar(); renderAdmin(); }
   else $('#pinErr').textContent='Nope, try again.';
 }
 function renderAdmin(){
@@ -4051,7 +4056,7 @@ function renderAdmin(){
     return `
     <div class="card tight">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-        <b>${esc(r.name)} · ${esc(r.dateLabel)}${r.frozen?' 🔒':''}</b>
+        <b>${esc(r.name)} · ${esc(r.dateLabel)}${roundFrozen(r)?' 🔒':''}</b>
         <select onchange="setSplitMode('${r.id}',this.value)" style="width:auto;padding:6px 8px;border-radius:8px;border:1px solid var(--line);font-size:12px;font-weight:600;color:var(--text-dim)">
           <option value="none" ${splitModeOf(r)==='none'?'selected':''}>All 18</option>
           <option value="half" ${splitModeOf(r)==='half'?'selected':''}>Front 9 + Back 9</option>
@@ -4066,8 +4071,8 @@ function renderAdmin(){
         </select>
       </div>
       ${segSelects}
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:${r.frozen?'var(--red)':'var(--text-dim)'};margin-top:2px">
-        <input type="checkbox" ${r.frozen?'checked':''} onchange="setFrozen('${r.id}',this.checked)" style="width:17px;height:17px"/> Freeze this round (lock scoring)
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:${roundFrozen(r)?'var(--red)':'var(--text-dim)'};margin-top:2px">
+        <input type="checkbox" ${roundFrozen(r)?'checked':''} onchange="setFrozen('${r.id}',this.checked)" style="width:17px;height:17px"/> Freeze this round (lock scoring)
       </label>
     </div>`;
   }).join('');
@@ -4077,6 +4082,7 @@ function renderAdmin(){
       <h2>Control Room</h2><button class="btn sm ghost" onclick="closeModal()">Done</button>
     </div>
     <div class="modal-b">
+      ${State.archive?`<div class="banner" style="margin-bottom:12px">📚 You're editing <b>${State.year}</b> (archived). Changes save to that year.</div>`:''}
       <button class="btn" style="width:100%;margin-bottom:16px;background:var(--ink);color:var(--light)" onclick="renderAdminGuide()">📖 Commissioner's Guide — how everything works</button>
       <div class="eyebrow">Teams</div>
       <div class="two" style="margin-bottom:14px">
@@ -4094,7 +4100,7 @@ function renderAdmin(){
         <button class="btn ghost sm" style="width:100%" onclick="editPlayer('')">+ Add player</button>
         <button class="btn ghost sm" style="width:100%" onclick="seedSample()">Reload trip roster</button>
       </div>
-      <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="openNewYearModal()">📅 Start a new year…</button>
+      ${State.archive?'':`<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="openNewYearModal()">📅 Start a new year…</button>`}
       <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="renderSizesAdmin()">👕 Apparel sizes &amp; order summary</button>
 
       <div class="divider"></div>
@@ -4172,7 +4178,7 @@ async function setHcpLocked(on){ State.config.settings.hcpLocked=on; await saveC
 async function setAllowance(fmt,v){ State.config.settings.allowance=State.config.settings.allowance||{}; State.config.settings.allowance[fmt]=(v===''?100:Number(v)); await saveConfig(); }
 async function setCourseTee(cid,name){ const c=course(cid); const t=(c?.tees||[]).find(x=>x.name===name); if(c&&t){ c.tee=name; c.rating=t.rating; c.slope=t.slope; } await saveConfig(); renderAdmin(); }
 async function setSegWeight(rid,segId,v){ const {seg}=findSeg(rid,segId); if(seg) seg.weight=(v===''?1:Number(v)); await saveConfig(); }
-async function setFrozen(rid,on){ const r=State.config.rounds.find(x=>x.id===rid); if(r) r.frozen=on; await saveConfig(); renderAdmin(); }
+async function setFrozen(rid,on){ const r=State.config.rounds.find(x=>x.id===rid); if(r) r.frozen=on; if(State.archive){ State.origFrozen=State.origFrozen||{}; State.origFrozen[rid]=!!on; if(r) r.frozen=true; } await saveConfig(); renderAdmin(); }
 
 /* admin mutations */
 const recentConfigWrite = {};   // key ('config' or 'sandbox-config') -> timestamp until which local config should win over a poll fetch
@@ -4189,7 +4195,12 @@ async function saveConfig(){
   const key=State.sandbox?'sandbox-config':'config';
   setTimeout(syncYearLabel, 0);
   recentConfigWrite[key]=Date.now()+20000;   // protect for 20s — long enough to cover normal sync lag
-  Store.set(key,State.config);
+  let cfg=State.config;
+  if(State.archive && State.origFrozen){   // restore the real lock flags — the archive lock is display-only
+    cfg=JSON.parse(JSON.stringify(cfg));
+    (cfg.rounds||[]).forEach(r=>{ if(r.id in State.origFrozen){ if(State.origFrozen[r.id]) r.frozen=true; else delete r.frozen; } });
+  }
+  Store.set(key,cfg);
 }
 function setTeamName(id,v){ team(id).name=v; saveConfig(); }
 function setTeamColor(id,v){ team(id).color=v; saveConfig(); render(); }
