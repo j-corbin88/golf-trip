@@ -76,6 +76,45 @@ input,select{font-family:inherit;font-size:16px}
 .yp-row .s{font-size:12px;color:rgba(237,231,214,.65);margin-top:2px}
 .yp-row .tag{float:right;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.1);margin-top:4px}
 .yp-row .tag.cur{background:var(--gold);color:var(--ink)}
+#statsHost{display:none;position:fixed;inset:0;z-index:90;background:var(--ink);color:var(--light);overflow-y:auto;-webkit-overflow-scrolling:touch}
+#statsHost .card{color:var(--text)}
+#statsHost .st-in{max-width:720px;margin:0 auto;padding:max(14px,env(safe-area-inset-top)) 14px 48px}
+.st-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+.st-top h2{font-family:'Oswald';font-size:22px;letter-spacing:.06em;text-transform:uppercase;margin:0}
+.st-x{width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.1);color:var(--light);font-size:16px}
+.st-tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:14px;padding-bottom:2px}
+.st-tabs button{flex:none;padding:8px 15px;border-radius:999px;font-weight:600;font-size:13px;background:rgba(255,255,255,.08);color:rgba(237,231,214,.72);white-space:nowrap}
+.st-tabs button.on{background:var(--gold);color:var(--ink)}
+.st-tabs.light{margin-bottom:10px}.st-tabs.light button{background:var(--paper2);color:var(--text);border:1px solid var(--line)}.st-tabs.light button.on{background:var(--ink);color:var(--light);border-color:var(--ink)}
+.st-scroll{overflow-x:auto;margin:0 -16px;padding:0 16px}
+.st-tbl{border-collapse:collapse;width:100%;font-size:13px;white-space:nowrap}
+.st-tbl th{font-family:'Oswald';font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-dim);text-align:right;padding:6px 8px;border-bottom:2px solid var(--line);cursor:pointer;font-weight:600}
+.st-tbl th.on{color:#8a6410}
+.st-tbl td{padding:8px;text-align:right;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums}
+.st-tbl td.on{background:rgba(240,180,41,.13)}
+.st-tbl td.best{color:var(--green);font-weight:700}
+.st-tbl td small{color:var(--text-dim);font-size:10.5px;font-weight:400}
+.st-tbl .nm{text-align:left;position:sticky;left:0;background:var(--paper);z-index:1;font-weight:600}
+.st-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:1px}
+.st-y{font-family:'Oswald';font-size:22px;font-weight:600;min-width:56px}
+.st-click{cursor:pointer}
+.st-rd{margin-top:12px}
+.st-rdh{display:flex;gap:8px;align-items:baseline;margin-bottom:5px}
+.st-rdh b{font-family:'Oswald';font-size:15px;text-transform:uppercase;letter-spacing:.04em}
+.st-rdh span{font-size:11px;color:var(--text-dim);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-rdh em{font-style:normal;font-size:12px;white-space:nowrap}
+.st-bar{display:flex;height:26px;border-radius:7px;overflow:hidden;gap:2px}
+.st-bar i{font-style:normal;display:grid;place-items:center;color:#fff;font-weight:700;font-size:13px;min-width:0}
+.st-segs{font-size:11.5px;color:var(--text-dim);margin-top:5px}
+.st-holes{display:grid;grid-template-columns:repeat(18,1fr);gap:2px}
+.st-holes .hc{display:flex;flex-direction:column;align-items:stretch;text-align:center}
+.st-holes .up,.st-holes .dn{display:flex}
+.st-holes .up{align-items:flex-end;border-bottom:1.5px solid var(--text-dim)}
+.st-holes .dn{align-items:flex-start}
+.st-holes i{display:block;width:100%;border-radius:2px}
+.st-holes small{font-size:9px;color:var(--text);font-weight:600;line-height:1.5}.st-holes small.pp{color:var(--text-dim);font-weight:400}
+.st-key{display:flex;gap:14px;font-size:11px;color:var(--text-dim);margin-top:8px}.st-key i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px}
+
 .me-chip{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.08);padding:5px 9px 5px 6px;border-radius:999px;font-size:12px;font-weight:600;color:var(--light)}
 .me-chip .av{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:15px;background:var(--paper)}
 
@@ -506,7 +545,13 @@ const Store = (() => {
     get pending(){ return outbox.size; },
     // keys passed in by the app are "logical"; the year prefix (YP) is added here, so nothing else needs to know about years
     async get(key0){ return this._get(YP+key0); },
-    async rawGet(key){ return this._get(key); },     // global keys (the years registry) — never prefixed
+    async rawGet(key){ return this._get(key); },
+    async rawList(prefix){      // read-only listing across years — keys come back with their full prefix
+      let base;
+      try{ base=await sList(prefix); ok(); }catch(e){ fail(); base=lsList(prefix); }
+      for(const [k,entry] of outbox){ if(k.startsWith(prefix)){ if(entry.op==='del') delete base[k]; else base[k]=entry.value; } }
+      notify(); return base;
+    },     // global keys (the years registry) — never prefixed
     async _get(key){
       try{ const d=await sGet(key); ok(); if(d!=null) lsSet(key,d); notify(); const p=pendingVal(key); return p!==undefined?p:d; }
       catch(e){ fail(); notify(); const p=pendingVal(key); return p!==undefined?p:lsGet(key); }
@@ -1648,6 +1693,305 @@ if(typeof window!=='undefined'){ window.addEventListener('online', ()=>{ Store.f
 /* ============================================================
    IDENTITY
    ============================================================ */
+/* ============================================================
+   STATS — all-time and year by year, phased by year → round → front/back nine → hole
+   Reads every year straight from the store (read-only) and runs the normal scoring engine on each year's own data.
+   ============================================================ */
+const StatsUI={tab:'all',sort:'pts',rnd:{},years:[]};
+const _stCache={};
+const stRel=(x,d)=>{ if(x==null||isNaN(x)) return '–'; const k=Math.pow(10,d==null?1:d), v=Math.round(x*k)/k; return v===0?'E':(v>0?'+'+v:String(v)); };
+const stNum=(x,d)=>{ if(x==null||isNaN(x)) return '–'; const k=Math.pow(10,d||0); return String(Math.round(x*k)/k); };
+const stShort=(n)=>{ const p=String(n||'').replace(/\(.*?\)/g,'').trim().split(/\s+/); if(p.length>1 && /^\d+$/.test(p[p.length-1])) return p.join(' '); return p.length>1 ? p[0]+' '+p[p.length-1][0]+'.' : (p[0]||'?'); };
+const stKey=(n)=>String(n||'').trim().toLowerCase().replace(/\s+/g,' ');
+function stHoleNet(pid,r,h,g){ if(!useHcp() || (hcpOf(pid)==null && !playerHasOverrides(r.id,pid))) return g; return g-strokeSheet(pid,r,h); }
+// run fn with the app's globals pointed at another year's data (synchronous, so a poll can never interleave)
+function withYearData(d, fn){
+  const sv={config:State.config,cards:State.cards,hcps:State.hcps,adminEdit:State.adminEdit};
+  State.config=d.cfg; State.cards=d.cards; State.hcps=d.hcps; State.adminEdit=null;
+  try{ return fn(); } finally{ Object.assign(State,sv); }
+}
+async function statsLoadYear(entry){
+  const pre=entry.prefix||'';
+  const cfg=await Store.rawGet(pre+'config');
+  if(!cfg) return null;
+  const strip=(o)=>{ const out={}; Object.entries(o||{}).forEach(([k,v])=>{ out[k.slice(pre.length)]=v; }); return out; };
+  const cards=strip(await Store.rawList(pre+'card:'));
+  const hc=strip(await Store.rawList(pre+'hcp:'));
+  const hcps={}; Object.entries(hc).forEach(([k,v])=>{ if(v?.index!=null) hcps[k.split(':')[1]]=v.index; });
+  return {year:entry.year, cfg, cards, hcps};
+}
+const ST_SUM=['pts','w','l','h','holes','gross','net','par','eagles','birdies','pars','bogeys','doubles','blows','fN','fRel','bN','bRel','mulls'];
+function computeYearStats(d){
+  return withYearData(d, ()=>{
+    const cfg=State.config, rounds=(cfg.rounds||[]).filter(r=>!r.test), roster=cfg.players||[];
+    const teams=(cfg.teams||[]).map(t=>({id:t.id,name:t.name,color:t.color}));
+    const S={year:d.year,label:cfg.settings?.tripSub||'',teams,players:{},rounds:[],fmtRec:{},recRounds:[],recHoles:[],cup:{},complete:false,has:false};
+    roster.forEach(p=>{ S.players[p.id]={id:p.id,name:p.name,teamId:p.teamId,byRound:{},fmt:{},rounds:[],t3:[0,0],t4:[0,0],t5:[0,0]}; ST_SUM.forEach(f=>S.players[p.id][f]=0); });
+    const mull=mullStats(rounds);
+    Object.entries(mull).forEach(([pid,m])=>{ if(S.players[pid]) S.players[pid].mulls=m.total; });
+    const cum={}; teams.forEach(t=>cum[t.id]=0);
+    rounds.forEach(r=>{
+      const c=courseOf(r), pars=c?.pars||[];
+      const R={id:r.id,name:r.name,date:r.dateLabel||'',course:c?.name||'',pars,segs:[],team:{},cum:{},holes:{},complete:roundComplete(r)};
+      teams.forEach(t=>R.team[t.id]=0);
+      const acc={};
+      segsOf(r).forEach(seg=>{
+        if(!seg.format) return;
+        const fm=FORMATS[seg.format];
+        const sp0={}; teams.forEach(t=>sp0[t.id]=0); addSegPoints(sp0,r,seg);
+        teams.forEach(t=>R.team[t.id]+=sp0[t.id]);
+        R.segs.push({label:seg.label||'',fmt:seg.format,pts:sp0,n:segMatches(seg).length});
+        segMatches(seg).forEach(m=>{
+          const sp=fm?.scoring==='aggregate' ? aggPointSplit(computeAggregateMatch(r,seg,m)) : matchPointSplit(computeMatch(r,seg,m));
+          if(!sp) return;
+          const note=(ids,mine,theirs)=>{
+            const res=mine>theirs?'w':(mine<theirs?'l':'h'), tid=teamOfSide(ids);
+            if(tid){ const tf=S.fmtRec[tid]||(S.fmtRec[tid]={}); (tf[seg.format]||(tf[seg.format]={w:0,l:0,h:0}))[res]++; }
+            ids.forEach(id=>{ const P=S.players[id]; if(P) (P.fmt[seg.format]||(P.fmt[seg.format]={w:0,l:0,h:0}))[res]++; });
+          };
+          note(m.a,sp.a,sp.b); note(m.b,sp.b,sp.a);
+        });
+        if(fm?.side==='group') return;   // shared cards (foursomes / scramble) have no individual scores
+        roster.forEach(p=>{
+          const card=State.cards[cardKey(r.id,seg.id,p.id)]; if(!card?.holes) return;
+          const P=S.players[p.id], a=acc[p.id]||(acc[p.id]={gross:0,net:0,par:0,n:0,fN:0,fRel:0,bN:0,bRel:0});
+          Object.entries(card.holes).forEach(([hs,g])=>{
+            const h=Number(hs), par=pars[h-1]; if(g==null||!par) return;
+            const net=stHoleNet(p.id,r,h,g), rel=g-par;
+            P.holes++; P.gross+=g; P.net+=net; P.par+=par;
+            if(rel<=-2)P.eagles++; else if(rel===-1)P.birdies++; else if(rel===0)P.pars++; else if(rel===1)P.bogeys++; else if(rel===2)P.doubles++; else P.blows++;
+            const t=par===3?P.t3:(par===5?P.t5:P.t4); t[0]++; t[1]+=rel;
+            if(h<=9){ P.fN++; P.fRel+=rel; a.fN++; a.fRel+=rel; } else { P.bN++; P.bRel+=rel; a.bN++; a.bRel+=rel; }
+            a.gross+=g; a.net+=net; a.par+=par; a.n++;
+            const hh=R.holes[h]||(R.holes[h]=[0,0]); hh[0]++; hh[1]+=rel;
+            if(rel>=3) S.recHoles.push({name:p.name,round:r.name,hole:h,gross:g,par,rel,year:d.year});
+          });
+        });
+      });
+      Object.entries(acc).forEach(([pid,a])=>{
+        const P=S.players[pid];
+        P.rounds.push({rid:r.id,rname:r.name,gross:a.gross,net:a.net,par:a.par,n:a.n});
+        if(a.n>=18) S.recRounds.push({name:P.name,round:r.name,gross:a.gross,net:a.net,par:a.par,year:d.year});
+      });
+      teams.forEach(t=>{ cum[t.id]+=R.team[t.id]; R.cum[t.id]=cum[t.id]; });
+      S.rounds.push(R);
+    });
+    const ps=playerPointStats(rounds);
+    Object.entries(ps).forEach(([pid,o])=>{ const P=S.players[pid]; if(P){ P.pts=o.pts; P.w=o.w; P.l=o.l; P.h=o.h; P.byRound=o.by; } });
+    S.cup=tripPoints();
+    const played=rounds.filter(r=>segsOf(r).some(s=>s.format));
+    S.complete=played.length>0 && played.every(r=>roundComplete(r));
+    S.has=Object.values(S.players).some(p=>p.holes>0||p.w+p.l+p.h>0);
+    return S;
+  });
+}
+function mergeCareer(list){
+  const C={};
+  list.forEach(S=>Object.values(S.players).forEach(P=>{
+    if(!(P.holes>0||P.w+P.l+P.h>0)) return;
+    const k=stKey(P.name);
+    const o=C[k]||(C[k]={name:P.name,years:[],ptsBy:{},rounds:[],fmt:{}});
+    ST_SUM.forEach(f=>o[f]=(o[f]||0)+P[f]);
+    o.years.push(S.year); o.ptsBy[S.year]=P.pts; o.name=P.name;
+    P.rounds.forEach(x=>o.rounds.push({...x,year:S.year}));
+    Object.entries(P.fmt).forEach(([f,v])=>{ const q=o.fmt[f]||(o.fmt[f]={w:0,l:0,h:0}); q.w+=v.w; q.l+=v.l; q.h+=v.h; });
+  }));
+  return C;
+}
+// derived columns shared by the year and the career tables
+function stRow(P){
+  const R={...P};
+  R.rds=P.rounds.length;
+  R.rg=P.holes?(P.gross-P.par)/P.holes*18:null;
+  R.rn=P.holes?(P.net-P.par)/P.holes*18:null;
+  R.f9=P.fN?P.fRel/P.fN*9:null; R.b9=P.bN?P.bRel/P.bN*9:null;
+  R.bird=P.eagles+P.birdies;
+  return R;
+}
+const ST_COLS=[
+  {k:'pts',h:'Pts',f:r=>fmtPts(r.pts),v:r=>r.pts,desc:true},
+  {k:'rec',h:'W-L-H',f:r=>`${r.w}-${r.l}-${r.h}`,v:r=>(r.w+r.l+r.h)?(r.w+r.h/2)/(r.w+r.l+r.h):null,desc:true},
+  {k:'rds',h:'Rds',f:r=>r.rds,v:r=>r.rds,desc:true},
+  {k:'rg',h:'Gross/rd',f:r=>stRel(r.rg),v:r=>r.rg,desc:false},
+  {k:'rn',h:'Net/rd',f:r=>stRel(r.rn),v:r=>r.rn,desc:false},
+  {k:'bird',h:'🐦',f:r=>r.bird,v:r=>r.bird,desc:true},
+  {k:'pars',h:'Pars',f:r=>r.pars,v:r=>r.pars,desc:true},
+  {k:'bogeys',h:'Bog',f:r=>r.bogeys,v:r=>r.bogeys,desc:true},
+  {k:'doubles',h:'Dbl',f:r=>r.doubles,v:r=>r.doubles,desc:true},
+  {k:'blows',h:'💥',f:r=>r.blows,v:r=>r.blows,desc:true},
+  {k:'mulls',h:'Mull',f:r=>r.mulls,v:r=>r.mulls,desc:true},
+];
+function stTable(rows, tcolor){
+  const col=ST_COLS.find(c=>c.k===StatsUI.sort)||ST_COLS[0];
+  const key=(r)=>col.v(r);
+  const sorted=[...rows].sort((a,b)=>{ const x=key(a), y=key(b); if(x==null&&y==null) return 0; if(x==null) return 1; if(y==null) return -1; return (col.desc?y-x:x-y)||(b.pts-a.pts)||String(a.name).localeCompare(b.name); });
+  const head=ST_COLS.map(c=>`<th class="${c.k===col.k?'on':''}" onclick="stSort('${c.k}')">${c.h}${c.k===col.k?(col.desc?' ▾':' ▴'):''}</th>`).join('');
+  const body=sorted.map(r=>`<tr><td class="nm">${tcolor?`<span class="st-dot" style="background:${tcolor(r)||'#999'}"></span>`:''}${esc(stShort(r.name))}</td>${ST_COLS.map(c=>`<td class="${c.k===col.k?'on':''}">${c.f(r)}</td>`).join('')}</tr>`).join('');
+  return `<div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Player</th>${head}</tr></thead><tbody>${body}</tbody></table></div>
+    <div class="muted" style="font-size:11px;margin-top:8px">Tap a column to sort. Gross/Net are strokes vs par per 18 holes. 🐦 = birdies &amp; better · 💥 = triple bogey or worse · Mull = mulligans used.</div>`;
+}
+function stWinner(S){
+  const ts=S.teams; if(ts.length<2) return null;
+  const a=ts[0], b=ts[1], pa=S.cup[a.id]||0, pb=S.cup[b.id]||0;
+  return {a,b,pa,pb,w:pa===pb?null:(pa>pb?a:b),done:S.complete};
+}
+function stAwards(items){
+  // items: {rounds:[], holes:[], people:[{name,pts,bird,blows,mulls,f9,b9,holes,...}], tag:(x)=>string}
+  const tag=items.tag||(()=>'');
+  const row=(e,t,v)=>`<div class="roster-item"><div class="av">${e}</div><div class="info"><b>${t}</b><span>${v}</span></div></div>`;
+  const out=[];
+  const best=(arr,f,lowest)=>arr.reduce((m,x)=>{ const v=f(x); if(v==null) return m; return (!m||(lowest?v<m.v:v>m.v))?{x,v}:m; },null);
+  const bn=best(items.rounds,x=>x.net-x.par,true);
+  if(bn) out.push(row('🎯','Best net round',`${esc(stShort(bn.x.name))} — ${bn.x.net} net (${stRel(bn.v,0)}) · ${esc(bn.x.round)}${tag(bn.x)}`));
+  const bg=best(items.rounds,x=>x.gross-x.par,true);
+  if(bg) out.push(row('⛳','Best gross round',`${esc(stShort(bg.x.name))} — ${bg.x.gross} (${stRel(bg.v,0)}) · ${esc(bg.x.round)}${tag(bg.x)}`));
+  const wr=best(items.rounds,x=>x.gross-x.par,false);
+  if(wr && items.rounds.length>1) out.push(row('🪦','Roughest round',`${esc(stShort(wr.x.name))} — ${wr.x.gross} (${stRel(wr.v,0)}) · ${esc(wr.x.round)}${tag(wr.x)}`));
+  const bh=best(items.holes,x=>x.rel,false);
+  if(bh) out.push(row('☃️','Biggest blow-up',`${esc(stShort(bh.x.name))} — a ${bh.x.gross} on a par ${bh.x.par} (hole ${bh.x.hole}, ${esc(bh.x.round)})${tag(bh.x)}`));
+  const pp=items.people.filter(p=>p.holes>0||p.w+p.l+p.h>0);
+  const mp=best(pp,p=>p.pts,false);   if(mp && mp.v>0) out.push(row('🏆','Most match points',`${esc(stShort(mp.x.name))} — ${fmtPts(mp.v)} pts (${mp.x.w}-${mp.x.l}-${mp.x.h})`));
+  const mb=best(pp,p=>p.bird,false);  if(mb && mb.v>0) out.push(row('🐦','Most birdies',`${esc(stShort(mb.x.name))} — ${mb.v}`));
+  const mx=best(pp,p=>p.blows,false); if(mx && mx.v>0) out.push(row('💥','Most triple-bogey-or-worse holes',`${esc(stShort(mx.x.name))} — ${mx.v}`));
+  const ml=best(pp,p=>p.mulls,false); if(ml && ml.v>0) out.push(row('🔥','Mulligan king',`${esc(stShort(ml.x.name))} — ${ml.v} used`));
+  const cl=best(pp.filter(p=>p.fN>=9&&p.bN>=9),p=>p.b9-p.f9,true);  if(cl) out.push(row('🧊','Best closer',`${esc(stShort(cl.x.name))} — ${stRel(cl.x.b9)} on the back vs ${stRel(cl.x.f9)} on the front (per 9)`));
+  const fd=best(pp.filter(p=>p.fN>=9&&p.bN>=9),p=>p.b9-p.f9,false);  if(fd && fd.v>0 && fd.x!==cl?.x) out.push(row('📉','Back-nine fade',`${esc(stShort(fd.x.name))} — ${stRel(fd.x.b9)} on the back vs ${stRel(fd.x.f9)} on the front (per 9)`));
+  return out.join('')||`<p class="muted">Nothing to crown yet.</p>`;
+}
+function stAllTime(){
+  const ys=StatsUI.years.filter(s=>s.has);
+  const hist=StatsUI.years.map(s=>{
+    if(!s.has) return `<div class="row"><div class="st-y">${s.year}</div><div class="nm"><b style="color:var(--text-dim)">Not played yet</b><span>${esc(s.label||'')}</span></div></div>`;
+    const w=stWinner(s);
+    const title=!w?'—':(w.done?(w.w?`${esc(w.w.name)} wins`:'Tied'):'In progress');
+    return `<div class="row st-click" onclick="stTab(${s.year})"><div class="st-y">${s.year}</div><div class="nm"><b>${title}</b><span>${esc(s.label||'')}${s.label?' · ':''}tap for the full ${s.year} breakdown</span></div>${w?`<div class="sc" style="font-size:19px"><span style="color:${w.a.color}">${fmtPts(w.pa)}</span>–<span style="color:${w.b.color}">${fmtPts(w.pb)}</span></div>`:''}</div>`;
+  }).join('');
+  if(!ys.length) return `<div class="card"><div class="eyebrow">The Cup, year by year</div>${hist}</div><div class="card"><div class="empty"><div class="big">📊</div><b>No scores in yet</b><p class="muted" style="margin-top:6px">Stats build themselves from the live scores.</p></div></div>`;
+  const C=mergeCareer(ys), career=Object.values(C).map(o=>stRow({...o,rounds:o.rounds}));
+  const yoy=ys.slice().sort((a,b)=>a.year-b.year).map(S=>{
+    const P=Object.values(S.players).filter(p=>p.holes>0||p.w+p.l+p.h>0);
+    const holes=P.reduce((t,p)=>t+p.holes,0), rel=P.reduce((t,p)=>t+(p.gross-p.par),0);
+    const sum=(f)=>P.reduce((t,p)=>t+p[f],0);
+    return `<tr><td class="nm">${S.year}</td><td>${P.length}</td><td>${S.rounds.filter(r=>r.complete).length}</td><td>${holes?stRel(rel/holes*18):'–'}</td><td>${sum('birdies')+sum('eagles')}</td><td>${sum('blows')}</td><td>${sum('mulls')}</td></tr>`;
+  }).join('');
+  const yrs=ys.slice().sort((a,b)=>a.year-b.year).map(s=>s.year);
+  const ptsRows=career.slice().sort((a,b)=>b.pts-a.pts).map(c=>`<tr><td class="nm">${esc(stShort(c.name))}</td>${yrs.map(y=>`<td>${c.ptsBy[y]!=null?fmtPts(c.ptsBy[y]):'–'}</td>`).join('')}<td class="on"><b>${fmtPts(c.pts)}</b></td></tr>`).join('');
+  const rec=stAwards({rounds:ys.flatMap(s=>s.recRounds),holes:ys.flatMap(s=>s.recHoles),people:career,tag:x=>x.year?` · ${x.year}`:''});
+  return `
+  <div class="card"><div class="eyebrow">The Cup, year by year</div>${hist}</div>
+  <div class="card"><div class="eyebrow">Career</div>${stTable(career, null)}</div>
+  <div class="card"><div class="eyebrow">Year over year</div><div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Year</th><th>Golfers</th><th>Rds</th><th>Field gross/rd</th><th>🐦</th><th>💥</th><th>Mull</th></tr></thead><tbody>${yoy}</tbody></table></div></div>
+  <div class="card"><div class="eyebrow">Match points by year</div><div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Player</th>${yrs.map(y=>`<th style="cursor:default">${y}</th>`).join('')}<th style="cursor:default">Total</th></tr></thead><tbody>${ptsRows}</tbody></table></div></div>
+  <div class="card"><div class="eyebrow">Record book</div>${rec}</div>`;
+}
+function stYearView(S){
+  if(!S || !S.has){
+    return `<div class="card"><div class="empty"><div class="big">📊</div><b>${S?S.year:''} has no scores yet</b><p class="muted" style="margin-top:6px">Stats fill in as soon as matches are played.</p></div></div>`;
+  }
+  const w=stWinner(S), tcol=(r)=>S.teams.find(t=>t.id===r.teamId)?.color;
+  const T=S.teams;
+  // ---- Cup + race by round
+  let cup='';
+  if(w){
+    const big=(t,p)=>`<div style="flex:1;text-align:center"><div style="font-family:'Oswald';font-size:44px;font-weight:700;line-height:1;color:${t.color}">${fmtPts(p)}</div><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-top:4px">${esc(t.name)}</div></div>`;
+    cup=`<div style="display:flex;align-items:center;gap:6px;margin:6px 0 4px">${big(w.a,w.pa)}<div style="color:var(--text-dim);font-weight:700">–</div>${big(w.b,w.pb)}</div>
+      <div style="text-align:center;font-weight:700;margin-bottom:12px">${w.done?(w.w?`🏆 ${esc(w.w.name)} take the Cup`:'🤝 Tied'):'⏳ In progress'}</div>`;
+  }
+  const race=S.rounds.filter(r=>r.segs.length).map(r=>{
+    const tot=T.reduce((t,x)=>t+(r.team[x.id]||0),0);
+    const bar=tot>0 ? `<div class="st-bar">${T.map(t=>`<i style="flex:${r.team[t.id]||0};background:${t.color}">${r.team[t.id]?fmtPts(r.team[t.id]):''}</i>`).join('')}</div>` : `<div class="muted" style="font-size:12px;padding:4px 0">Nothing scored yet</div>`;
+    const segs=r.segs.filter(s=>s.n).map(s=>`${esc(s.label||FORMATS[s.fmt]?.label||'')} <b>${T.map(t=>fmtPts(s.pts[t.id]||0)).join('–')}</b>`).join(' &nbsp;·&nbsp; ');
+    const run=T.map(t=>`<span style="color:${t.color};font-weight:700">${fmtPts(r.cum[t.id]||0)}</span>`).join('–');
+    return `<div class="st-rd"><div class="st-rdh"><b>${esc(r.name)}</b><span>${esc([r.date,r.course].filter(Boolean).join(' · '))}</span><em>${tot>0?'Total '+run:''}</em></div>${bar}${segs?`<div class="st-segs">${segs}</div>`:''}</div>`;
+  }).join('');
+  // ---- format scoreboard
+  const fmts=[...new Set(Object.values(S.fmtRec).flatMap(o=>Object.keys(o)))];
+  const fmtTbl=fmts.length ? `<div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Format</th>${T.map(t=>`<th style="cursor:default;color:${t.color}">${esc(t.name)}</th>`).join('')}</tr></thead><tbody>${fmts.map(f=>`<tr><td class="nm">${esc(FORMATS[f]?.label||f)}</td>${T.map(t=>{ const v=S.fmtRec[t.id]?.[f]; return `<td>${v?`${v.w}-${v.l}-${v.h}`:'–'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div><div class="muted" style="font-size:11px;margin-top:6px">Matches won – lost – halved.</div>` : '';
+  // ---- players
+  const rows=Object.values(S.players).filter(p=>p.holes>0||p.w+p.l+p.h>0).map(stRow);
+  // ---- round by round, individual
+  const rds=S.rounds.filter(r=>rows.some(p=>p.rounds.some(x=>x.rid===r.id)||p.byRound[r.id]!=null));
+  const ptsHead=rds.map(r=>`<th style="cursor:default">${esc(r.name.replace(/^Round\s*/i,'R'))}</th>`).join('');
+  const byPts=rows.slice().sort((a,b)=>b.pts-a.pts||a.name.localeCompare(b.name));
+  const ptsTbl=`<table class="st-tbl"><thead><tr><th class="nm">Player</th>${ptsHead}<th style="cursor:default">Σ</th></tr></thead><tbody>${byPts.map(p=>`<tr><td class="nm"><span class="st-dot" style="background:${tcol(p)||'#999'}"></span>${esc(stShort(p.name))}</td>${rds.map(r=>`<td>${p.byRound[r.id]!=null?fmtPts(p.byRound[r.id]):'–'}</td>`).join('')}<td class="on"><b>${fmtPts(p.pts)}</b></td></tr>`).join('')}</tbody></table>`;
+  const bestNet={}; rds.forEach(r=>{ let m=null; rows.forEach(p=>{ const x=p.rounds.find(q=>q.rid===r.id); if(x&&x.n>=18&&(m==null||x.net<m)) m=x.net; }); bestNet[r.id]=m; });
+  const netTbl=`<table class="st-tbl"><thead><tr><th class="nm">Player</th>${ptsHead}</tr></thead><tbody>${byPts.map(p=>`<tr><td class="nm"><span class="st-dot" style="background:${tcol(p)||'#999'}"></span>${esc(stShort(p.name))}</td>${rds.map(r=>{ const x=p.rounds.find(q=>q.rid===r.id); if(!x) return '<td>–</td>'; const full=x.n>=18; return `<td class="${full&&x.net===bestNet[r.id]?'best':''}">${x.net}<small> (${x.gross})${full?'':' · '+x.n+'h'}</small></td>`; }).join('')}</tr>`).join('')}</tbody></table>`;
+  // ---- front / back
+  const fb=rows.filter(p=>p.fN>=5&&p.bN>=5).sort((a,b)=>(a.b9-a.f9)-(b.b9-b.f9));
+  const fbTbl=fb.length ? `<div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Player</th><th style="cursor:default">Front 9</th><th style="cursor:default">Back 9</th><th style="cursor:default">Back − Front</th></tr></thead><tbody>${fb.map(p=>`<tr><td class="nm"><span class="st-dot" style="background:${tcol(p)||'#999'}"></span>${esc(stShort(p.name))}</td><td>${stRel(p.f9)}</td><td>${stRel(p.b9)}</td><td class="on"><b>${stRel(p.b9-p.f9)}</b></td></tr>`).join('')}</tbody></table></div><div class="muted" style="font-size:11px;margin-top:8px">Strokes vs par per nine (gross). A negative last column means they finish stronger than they start.</div>` : `<p class="muted">Needs a few holes on each nine.</p>`;
+  const par3=rows.filter(p=>p.t3[0]>=3&&p.t4[0]>=3).length;
+  const parTbl=par3 ? `<div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Player</th><th style="cursor:default">Par 3s</th><th style="cursor:default">Par 4s</th><th style="cursor:default">Par 5s</th></tr></thead><tbody>${rows.slice().sort((a,b)=>a.name.localeCompare(b.name)).map(p=>`<tr><td class="nm">${esc(stShort(p.name))}</td>${[p.t3,p.t4,p.t5].map(t=>`<td>${t[0]?stRel(t[1]/t[0],2):'–'}</td>`).join('')}</tr>`).join('')}</tbody></table></div><div class="muted" style="font-size:11px;margin-top:8px">Average strokes vs par per hole, by hole type.</div>` : '';
+  // ---- hole by hole
+  const hr=S.rounds.filter(r=>Object.keys(r.holes).length);
+  let holes='';
+  if(hr.length){
+    const sel=hr.find(r=>r.id===StatsUI.rnd[S.year])||hr[0];
+    const avgs=[]; for(let h=1;h<=18;h++){ const v=sel.holes[h]; avgs.push(v&&v[0]?v[1]/v[0]:null); }
+    const vals=avgs.filter(x=>x!=null), mxUp=Math.max(0,...vals), mxDn=Math.max(0,...vals.map(x=>-x));
+    const u=Math.min(70, 96/((mxUp+mxDn)||1)), upH=Math.max(10,mxUp*u), dnH=Math.max(10,mxDn*u);
+    const cols=avgs.map((a,i)=>`<div class="hc"><div class="up" style="height:${upH}px">${a!=null&&a>0?`<i style="height:${a*u}px;background:var(--red)"></i>`:''}</div><div class="dn" style="height:${dnH}px">${a!=null&&a<0?`<i style="height:${-a*u}px;background:var(--green)"></i>`:''}</div><small>${i+1}</small><small class="pp">${sel.pars[i]||''}</small></div>`).join('');
+    const ok=avgs.map((a,i)=>({a,h:i+1})).filter(x=>x.a!=null).sort((x,y)=>y.a-x.a);
+    const fa=avgs.slice(0,9).filter(x=>x!=null), ba=avgs.slice(9).filter(x=>x!=null);
+    const mean=(a)=>a.length?a.reduce((t,x)=>t+x,0)/a.length:null;
+    holes=`<div class="st-tabs light">${hr.map(r=>`<button class="${r.id===sel.id?'on':''}" onclick="stRound('${r.id}')">${esc(r.name)}</button>`).join('')}</div>
+      <div class="muted" style="margin:-2px 0 8px">${esc([sel.course,sel.date].filter(Boolean).join(' · '))} — field average vs par on each hole</div>
+      <div class="st-holes">${cols}</div>
+      <div class="st-key"><span><i style="background:var(--red)"></i>over par</span><span><i style="background:var(--green)"></i>under par</span><span>par on 2nd row</span></div>
+      ${ok.length>=2?`<div class="muted" style="margin-top:8px">🔥 Hardest: <b>#${ok[0].h}</b> (${stRel(ok[0].a,2)}) · 🍰 Easiest: <b>#${ok[ok.length-1].h}</b> (${stRel(ok[ok.length-1].a,2)}) · Front ${stRel(mean(fa),2)}/hole · Back ${stRel(mean(ba),2)}/hole</div>`:''}`;
+  }
+  const aw=stAwards({rounds:S.recRounds,holes:S.recHoles,people:rows,tag:()=>''});
+  return `
+  <div class="card"><div class="eyebrow">${S.year} Cup${S.label?' · '+esc(S.label):''}</div>${cup}${race}</div>
+  ${fmtTbl?`<div class="card"><div class="eyebrow">Record by format</div>${fmtTbl}</div>`:''}
+  <div class="card"><div class="eyebrow">Players</div>${stTable(rows, tcol)}</div>
+  <div class="card"><div class="eyebrow">Match points by round</div><div class="st-scroll">${ptsTbl}</div></div>
+  <div class="card"><div class="eyebrow">Net score by round <small style="text-transform:none;letter-spacing:0;color:var(--text-dim)">· (gross) · best net in green</small></div><div class="st-scroll">${netTbl}</div></div>
+  <div class="card"><div class="eyebrow">Front nine vs back nine</div>${fbTbl}${parTbl?`<div class="divider"></div>${parTbl}`:''}</div>
+  ${holes?`<div class="card"><div class="eyebrow">Hole by hole</div>${holes}</div>`:''}
+  <div class="card"><div class="eyebrow">${S.year} highlights</div>${aw}</div>`;
+}
+function renderStats(){
+  const host=document.getElementById('statsHost'), b=document.getElementById('stBody'); if(!b) return;
+  const top=host?host.scrollTop:0;
+  const tabs=`<div class="st-tabs"><button class="${StatsUI.tab==='all'?'on':''}" onclick="stTab('all')">All-time</button>${StatsUI.years.map(s=>`<button class="${StatsUI.tab===s.year?'on':''}" onclick="stTab(${s.year})">${s.year}</button>`).join('')}</div>`;
+  b.innerHTML=tabs+(StatsUI.tab==='all'?stAllTime():stYearView(StatsUI.years.find(s=>s.year===StatsUI.tab)));
+  if(host) host.scrollTop=top;
+}
+function stTab(t){ StatsUI.tab=t; renderStats(); const h=document.getElementById('statsHost'); if(h) h.scrollTop=0; }
+function stSort(k){ StatsUI.sort=k; renderStats(); }
+function stRound(id){ StatsUI.rnd[StatsUI.tab]=id; renderStats(); }
+async function stLoad(){
+  const reg=State.registry||DEFAULT_REGISTRY();
+  const ents=[...reg.years].sort((a,b)=>b.year-a.year);
+  StatsUI.years=await Promise.all(ents.map(async e=>{
+    const cur=e.year===State.currentYear;
+    if(!cur && _stCache[e.year]) return _stCache[e.year];
+    try{
+      const d=await statsLoadYear(e);
+      if(!d) return {year:e.year,label:e.label||'',has:false,teams:[],players:{},rounds:[],cup:{},recRounds:[],recHoles:[],fmtRec:{}};
+      const S=computeYearStats(d); S.label=d.cfg.settings?.tripSub||e.label||'';
+      if(!cur) _stCache[e.year]=S;
+      return S;
+    }catch(err){ console.warn('stats',e.year,err); return {year:e.year,label:e.label||'',has:false,teams:[],players:{},rounds:[],cup:{},recRounds:[],recHoles:[],fmtRec:{}}; }
+  }));
+}
+async function openStats(){
+  closeYearPanel();
+  let host=document.getElementById('statsHost');
+  if(!host){ host=document.createElement('div'); host.id='statsHost'; document.body.appendChild(host); }
+  host.innerHTML=`<div class="st-in"><div class="st-top"><h2>📊 Stats</h2><button class="st-x" onclick="closeStats()" aria-label="Close">✕</button></div><div id="stBody"><div class="empty" style="color:rgba(237,231,214,.7)"><div class="big">📊</div>Crunching every year…</div></div></div>`;
+  host.style.display='block'; host.scrollTop=0;
+  try{ document.body.style.overflow='hidden'; }catch(e){}
+  await stLoad();
+  const cur=StatsUI.years.find(s=>s.year===State.currentYear);
+  if(!(StatsUI.tab==='all' || StatsUI.years.some(s=>s.year===StatsUI.tab))) StatsUI.tab='all';
+  renderStats();
+}
+function closeStats(){
+  const host=document.getElementById('statsHost'); if(host){ host.style.display='none'; host.innerHTML=''; }
+  try{ document.body.style.overflow=''; }catch(e){}
+}
+
 function updateArchiveBar(){
   const bar=document.getElementById('archiveBar'); if(!bar) return;
   bar.classList.toggle('hidden', !State.archive);
@@ -1670,7 +2014,7 @@ function openYearPanel(){
     return `<button class="yp-row ${on?'on':''}" onclick="goYear(${y.year})"><span class="tag ${cur?'cur':''}">${cur?'Current':(on?'Viewing':'Archive')}</span><div class="y">${y.year}</div><div class="s">${esc(sub||(cur?'Trip details coming soon':'Past year'))}</div></button>`;
   }).join('');
   const host=document.getElementById('yearPanelHost');
-  host.innerHTML=`<div class="yp-back" onclick="closeYearPanel()"></div><aside class="yp" role="dialog" aria-label="Years"><div class="yp-top"><h2>The Cup</h2><button class="yp-x" onclick="closeYearPanel()" aria-label="Close">✕</button></div>${rows}<div class="muted" style="font-size:11px;margin-top:10px;color:rgba(237,231,214,.55)">The newest year is always on top. Past years are read-only.</div></aside>`;
+  host.innerHTML=`<div class="yp-back" onclick="closeYearPanel()"></div><aside class="yp" role="dialog" aria-label="Years"><div class="yp-top"><h2>The Cup</h2><button class="yp-x" onclick="closeYearPanel()" aria-label="Close">✕</button></div>${rows}<button class="yp-row" onclick="openStats()"><div class="y">📊 Stats</div><div class="s">All-time and year by year — rounds, nines, holes</div></button><div class="muted" style="font-size:11px;margin-top:10px;color:rgba(237,231,214,.55)">The newest year is always on top. Past years are read-only.</div></aside>`;
   requestAnimationFrame(()=>requestAnimationFrame(()=>host.classList.add('open')));
 }
 function closeYearPanel(){
