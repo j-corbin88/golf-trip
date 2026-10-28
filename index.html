@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>The Cup · Myrtle Beach 2026</title>
+<title>The Cup</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Inter:wght@400;500;600&family=Roboto+Mono:wght@500;700&display=swap" rel="stylesheet" />
@@ -364,7 +364,7 @@ input,select{font-family:inherit;font-size:16px}
     <img class="brandLogo" id="brandLogo" src="" alt="Loyola and Justin and Friends"/>
     <div>
       <h1 id="tripTitle">The Cup</h1>
-      <small id="tripSub">Myrtle Beach · Oct 22–25</small>
+      <small id="tripSub"></small>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:9px">
@@ -1578,7 +1578,7 @@ async function loadAll(){
   State.me=Device.get('me');
   if(!State.activeRound) State.activeRound=currentRound(cfg)?.id;
   document.getElementById('tripTitle').textContent=cfg.settings.tripName||'The Cup';
-  document.getElementById('tripSub').textContent=cfg.settings.tripSub||'';
+  document.getElementById('tripSub').textContent=cfg.settings.tripSub||(cfg.settings.yearSeed?String(State.year):'');
 }
 let refreshInFlight=false, refreshQueued=false;
 async function refresh(){
@@ -1759,7 +1759,7 @@ function exitSandbox(){
   State.realConfig=null; State.sandbox=false;
   document.getElementById('sandboxBar')?.classList.add('hidden');
   document.getElementById('tripTitle').textContent=State.config.settings.tripName||'The Cup';
-  document.getElementById('tripSub').textContent=State.config.settings.tripSub||'';
+  document.getElementById('tripSub').textContent=State.config.settings.tripSub||(State.config.settings.yearSeed?String(State.year):'');
   render(true);
 }
 async function resetSandboxScores(){
@@ -2245,7 +2245,7 @@ function weatherHTML(rounds){   // shown at the top of the Rounds tab
     </div>`;
   }).join('');
   const upd=new Date(State.weather.at).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'});
-  return `<div class="weather"><div class="wx-eyebrow">🌤 Forecast · ${esc(State.config?.settings?.resort||'True Blue')}</div>
+  return `<div class="weather"><div class="wx-eyebrow">🌤 Forecast${(State.config?.settings?.resort||!State.config?.settings?.yearSeed)?' · '+esc(State.config?.settings?.resort||'True Blue'):''}</div>
     <div class="wx-row">${tiles}</div>
     <div class="wx-foot">Temp at tee time · rain &amp; wind = worst during the round · updated ${esc(upd)} · open-meteo.com</div>
   </div>`;
@@ -3215,9 +3215,9 @@ function viewMore(){
   <div class="card" style="text-align:center">
     <img src="${LOGO_URI}" alt="Loyola and Justin and Friends" style="width:100%;max-width:280px;margin:0 auto 14px;display:block"/>
     <div class="eyebrow">Trip HQ</div>
-    <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:6px">${esc(s.resort||'True Blue Resort')}</h3>
+    <h3 style="font-size:19px;text-transform:uppercase;margin-bottom:6px">${esc(s.resort||(s.yearSeed?'Location TBD':'True Blue Resort'))}</h3>
     <div class="muted">${esc(s.checkIn||'')}</div>
-    <div class="muted" style="margin-top:8px">Oct 22–25, 2026 · 16 golfers${s.bookingRef?' · Ref '+esc(s.bookingRef):''}</div>
+    <div class="muted" style="margin-top:8px">${s.yearSeed?esc([s.tripDates||('Dates TBD · '+State.year),(State.config?.players?.length?State.config.players.length+' golfers':''),s.bookingRef?'Ref '+s.bookingRef:''].filter(Boolean).join(' · ')):'Oct 22–25, 2026 · 16 golfers'+(s.bookingRef?' · Ref '+esc(s.bookingRef):'')}</div>
     ${dinnersHTML(s)}
   </div>
   ${vaultHTML()}
@@ -3233,7 +3233,7 @@ function viewMore(){
     <p class="muted" style="margin-bottom:12px">A completely separate space with its own fake players — not the real roster or real rounds. Good for stress-testing sync with a friend without any risk to your actual trip.</p>
     <button class="btn ghost" onclick="enterSandbox()">Enter sandbox</button>
   </div>
-  <div class="muted" style="text-align:center;font-size:11px">The Cup · Myrtle Beach 2026 · built for the Blakefield ’06 crew</div>
+  <div class="muted" style="text-align:center;font-size:11px">The Cup${State.config?.settings?.yearSeed?' '+State.year:' · Myrtle Beach 2026'} · built for the Blakefield ’06 crew</div>
   `;
 }
 function vaultHTML(){
