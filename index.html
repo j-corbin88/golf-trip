@@ -1742,6 +1742,33 @@ async function statsLoadYear(entry){
 const stRGB=(c)=>{ const h=String(c||'').replace('#',''); const f=h.length===3?h.split('').map(x=>x+x).join(''):h; const n=parseInt(f,16); return isNaN(n)||f.length!==6?[90,100,120]:[(n>>16)&255,(n>>8)&255,n&255]; };
 const stInk=(c)=>{ const [r,g,b]=stRGB(c); return `rgb(${Math.round(r*.62)},${Math.round(g*.62)},${Math.round(b*.62)})`; };
 const stOn=(c)=>{ const [r,g,b]=stRGB(c); return (0.299*r+0.587*g+0.114*b)>150 ? 'var(--ink)' : '#fff'; };
+// Matches with no final result yet (not decided on the scores and no admin result), plus rounds that have a format but no pairings.
+function unfinishedMatches(){
+  const out=[], nm=(ids)=>ids.map(id=>{ const p=player(id); return p?stShort(p.name):'?'; }).join(' + ');
+  (State.config.rounds||[]).filter(r=>!r.test).forEach(r=>{
+    let any=false, n=0;
+    segsOf(r).forEach(seg=>{
+      if(!seg.format) return;
+      any=true;
+      segMatches(seg).forEach(m=>{
+        n++;
+        const res=FORMATS[seg.format]?.scoring==='aggregate'?computeAggregateMatch(r,seg,m):computeMatch(r,seg,m);
+        if(res.final) return;
+        out.push({rid:r.id,round:r.name,sid:seg.id,mid:m.id,seg:seg.label||'',fmt:seg.format,a:nm(m.a),b:nm(m.b),played:res.played!=null?res.played:res.thru,remaining:res.remaining});
+      });
+    });
+    if(any && !n) out.push({rid:r.id,round:r.name,none:true});
+  });
+  return out;
+}
+function unfinishedRows(list, canSet, fromAdmin){
+  return list.map(o=>{
+    if(o.none) return `<div class="row"><div class="nm"><b>${esc(o.round)}</b><span>No matches set up yet</span></div></div>`;
+    const btn=canSet?`<button class="btn ghost sm" style="width:auto;padding:7px 10px" onclick="${fromAdmin?'':'closeStats();'}openResultModal('${o.mid}','${o.rid}',${fromAdmin?'true':'false'})">Set result</button>`:'';
+    const prog=o.played?`thru ${o.played} · ${o.remaining} to go`:'not started';
+    return `<div class="row"><div class="nm"><b>${esc(o.round)} · ${esc(o.seg)} · ${esc(FORMATS[o.fmt]?.label||'')}</b><span style="white-space:normal">${esc(o.a)} vs ${esc(o.b)} · ${prog}</span></div>${btn}</div>`;
+  }).join('');
+}
 const ST_SUM=['rp','pts','w','l','h','holes','gross','net','par','eagles','birdies','pars','bogeys','doubles','blows','fN','fRel','bN','bRel','mulls'];
 function computeYearStats(d){
   return withYearData(d, ()=>{
@@ -1804,6 +1831,7 @@ function computeYearStats(d){
     const ps=playerPointStats(rounds);
     Object.entries(ps).forEach(([pid,o])=>{ const P=S.players[pid]; if(P){ P.pts=o.pts; P.w=o.w; P.l=o.l; P.h=o.h; P.byRound=o.by; } });
     S.cup=tripPoints();
+    S.open=unfinishedMatches();
     const played=rounds.filter(r=>segsOf(r).some(s=>s.format));
     S.complete=played.length>0 && played.every(r=>r.frozen||roundComplete(r));   // a locked round is finished
     S.has=Object.values(S.players).some(p=>p.holes>0||p.w+p.l+p.h>0);
@@ -1922,6 +1950,8 @@ function stYearView(S){
     cup=`<div style="display:flex;align-items:center;gap:6px;margin:6px 0 4px">${big(w.a,w.pa)}<div style="color:var(--text-dim);font-weight:700">–</div>${big(w.b,w.pb)}</div>
       <div style="text-align:center;font-weight:700;margin-bottom:12px">${w.done?(w.w?`🏆 ${esc(w.w.name)} take the Cup`:'🤝 Tied'):'⏳ In progress'}</div>`;
   }
+  const open=S.open||[], canSet=!State.archive && State.year===S.year && State.adminAuthed;
+  const openCard=open.length?`<div class="card"><div class="eyebrow">⏳ Unfinished matches (${open.length})</div>${unfinishedRows(open,canSet,false)}<div class="muted" style="font-size:11px;margin-top:8px">Matches with some scores count for whoever is ahead so far; ones with no scores aren't counted yet.${canSet?'':' The commissioner can set a result in Admin.'}</div></div>`:'';
   const race=S.rounds.filter(r=>r.segs.length).map(r=>{
     const tot=T.reduce((t,x)=>t+(r.team[x.id]||0),0);
     const bar=tot>0 ? `<div class="st-bar">${T.map(t=>`<i style="flex:${r.team[t.id]||0};background:${t.color};color:${stOn(t.color)}">${r.team[t.id]?fmtPts(r.team[t.id]):''}</i>`).join('')}</div>` : `<div class="muted" style="font-size:12px;padding:4px 0">Nothing scored yet</div>`;
@@ -1967,6 +1997,7 @@ function stYearView(S){
   const aw=stAwards({rounds:S.recRounds,holes:S.recHoles,people:rows,tag:()=>''});
   return `
   <div class="card"><div class="eyebrow">${S.year} Cup${S.label?' · '+esc(S.label):''}</div>${cup}${race}</div>
+  ${openCard}
   ${fmtTbl?`<div class="card"><div class="eyebrow">Record by format</div>${fmtTbl}</div>`:''}
   <div class="card"><div class="eyebrow">Players</div>${stTable(rows, tcol)}</div>
   <div class="card"><div class="eyebrow">Match points by round</div><div class="st-scroll">${ptsTbl}</div></div>
@@ -2358,8 +2389,11 @@ function cardPickerHTML(seg){
   const opts=ms.map((m,i)=>`<option value="${m.id}">Match ${i+1} · ${esc(matchTitle(m))}</option>`).join('');
   return `<select class="cardpick" aria-label="View other scorecards" title="View other scorecards" onchange="openCardView(this.value);this.selectedIndex=0"><option value="" selected disabled hidden>👁</option>${opts}</select>`;
 }
-function openResultModal(mid){
-  const {round}=curEntryRefs(); if(!round||!State.adminAuthed) return;
+let _resultRid=null, _resultAdmin=false;
+function openResultModal(mid, rid, fromAdmin){
+  if(rid!==undefined){ _resultRid=rid||null; _resultAdmin=!!fromAdmin; }
+  const round=_resultRid ? (State.config.rounds||[]).find(r=>r.id===_resultRid) : curEntryRefs().round;
+  if(!round||!State.adminAuthed) return;
   const T=State.config.teams||[];
   const tn=(ids)=>{ const t=T.find(x=>x.id===teamOfSide(ids)); return t?t.name:'Side'; };
   const rows=segsOf(round).filter(sg=>sg.format).map(sg=>{
@@ -2372,7 +2406,7 @@ function openResultModal(mid){
       <div style="display:flex;gap:6px">${btn('a',esc(tn(m.a))+'<br><span style="font-weight:400;font-size:11px">'+esc(names(m.a))+'</span>')}${btn('half','Halved')}${btn('b',esc(tn(m.b))+'<br><span style="font-weight:400;font-size:11px">'+esc(names(m.b))+'</span>')}</div>
       ${ov?`<button class="btn ghost sm" style="margin-top:6px;width:100%" onclick="setMatchResult('${round.id}','${sg.id}','${m.id}','')">Clear — use the scores</button>`:''}</div>`;
   }).join('');
-  showModal(`<div class="modal-h"><h2>🏆 Set match result</h2><p class="muted" style="margin:4px 0 0">Pick who won each segment of this match. It overrides the scores for points and the leaderboard, and shows “set by admin”. Clear it to go back to the scores.</p></div><div class="modal-b">${rows||'<div class="muted">No match found.</div>'}<button class="btn ghost" style="margin-top:6px" onclick="closeModal();render(false)">Done</button></div>`);
+  showModal(`<div class="modal-h"><h2>🏆 Set match result</h2><p class="muted" style="margin:4px 0 0">Pick who won each segment of this match. It overrides the scores for points and the leaderboard, and shows “set by admin”. Clear it to go back to the scores.</p></div><div class="modal-b">${rows||'<div class="muted">No match found.</div>'}<button class="btn ghost" style="margin-top:6px" onclick="${_resultAdmin?'renderAdmin()':'closeModal();render(false)'}">${_resultAdmin?'← Back to admin':'Done'}</button></div>`);
 }
 async function setMatchResult(rid,sid,mid,val){
   State.config.matchResults=State.config.matchResults||{};
@@ -2383,7 +2417,7 @@ async function setMatchResult(rid,sid,mid,val){
 function pickCard(v){
   if(!v) return;
   if(v.startsWith('v:')) return openCardView(v.slice(2));
-  if(v.startsWith('r:')) return openResultModal(v.slice(2));
+  if(v.startsWith('r:')) return openResultModal(v.slice(2), null, false);
   const {round,seg}=curEntryRefs();
   State.adminEdit = v.length>2 ? {rid:round.id, sid:seg.id, mid:v.slice(2)} : null;
   State.entrySide=null; State.pend=null; render(false);
@@ -4064,6 +4098,7 @@ function renderAdmin(){
       <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="renderSizesAdmin()">👕 Apparel sizes &amp; order summary</button>
 
       <div class="divider"></div>
+      ${(()=>{ const u=unfinishedMatches(); return u.length?`<div class="eyebrow">⏳ Unfinished matches (${u.length})</div><div class="muted" style="margin-bottom:6px">No final result yet. Set one if scores were never entered.</div>${unfinishedRows(u,true,true)}<div class="divider"></div>`:''; })()}
       <div class="eyebrow">Rounds — drop a format on each day</div>
       ${roundRows}
 
