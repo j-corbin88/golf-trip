@@ -1339,7 +1339,7 @@ function matchStatusParts(res){
   if(res.played===0) return {main:'—'};
   const u=Math.abs(res.diff);
   if(res.diff===0) return res.remaining===0 ? {main:'Halved'} : {main:'AS', sub:`thru ${res.played}`};
-  if(res.final && res.remaining>0) return {main:`${u}&${res.remaining}`};   // closed out
+  if(res.final && res.remaining>0) return {main:`${u}&${res.remaining}`, sub:'final'};   // closed out
   if(res.remaining===0) return {main:`${u} UP`, sub:'final'};
   return {main:`${u} UP`, sub:`thru ${res.played}`};
 }
