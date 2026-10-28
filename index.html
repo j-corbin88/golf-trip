@@ -1742,13 +1742,13 @@ async function statsLoadYear(entry){
 const stRGB=(c)=>{ const h=String(c||'').replace('#',''); const f=h.length===3?h.split('').map(x=>x+x).join(''):h; const n=parseInt(f,16); return isNaN(n)||f.length!==6?[90,100,120]:[(n>>16)&255,(n>>8)&255,n&255]; };
 const stInk=(c)=>{ const [r,g,b]=stRGB(c); return `rgb(${Math.round(r*.62)},${Math.round(g*.62)},${Math.round(b*.62)})`; };
 const stOn=(c)=>{ const [r,g,b]=stRGB(c); return (0.299*r+0.587*g+0.114*b)>150 ? 'var(--ink)' : '#fff'; };
-const ST_SUM=['pts','w','l','h','holes','gross','net','par','eagles','birdies','pars','bogeys','doubles','blows','fN','fRel','bN','bRel','mulls'];
+const ST_SUM=['rp','pts','w','l','h','holes','gross','net','par','eagles','birdies','pars','bogeys','doubles','blows','fN','fRel','bN','bRel','mulls'];
 function computeYearStats(d){
   return withYearData(d, ()=>{
     const cfg=State.config, rounds=(cfg.rounds||[]).filter(r=>!r.test), roster=cfg.players||[];
     const teams=(cfg.teams||[]).map(t=>({id:t.id,name:t.name,color:t.color}));
     const S={year:d.year,label:cfg.settings?.tripSub||'',teams,players:{},rounds:[],fmtRec:{},recRounds:[],recHoles:[],cup:{},complete:false,has:false};
-    roster.forEach(p=>{ S.players[p.id]={id:p.id,name:p.name,teamId:p.teamId,byRound:{},fmt:{},rounds:[],t3:[0,0],t4:[0,0],t5:[0,0]}; ST_SUM.forEach(f=>S.players[p.id][f]=0); });
+    roster.forEach(p=>{ S.players[p.id]={id:p.id,name:p.name,teamId:p.teamId,byRound:{},playedBy:{},fmt:{},rounds:[],t3:[0,0],t4:[0,0],t5:[0,0]}; ST_SUM.forEach(f=>S.players[p.id][f]=0); });
     const mull=mullStats(rounds);
     Object.entries(mull).forEach(([pid,m])=>{ if(S.players[pid]) S.players[pid].mulls=m.total; });
     const cum={}; teams.forEach(t=>cum[t.id]=0);
@@ -1790,6 +1790,9 @@ function computeYearStats(d){
           });
         });
       });
+      roster.forEach(p=>{   // played this round = in a match (team formats included) or has an individual card
+        if(acc[p.id] || segsOf(r).some(s=>s.format&&segMatches(s).some(m=>[...m.a,...m.b].includes(p.id)))){ const P=S.players[p.id]; P.rp++; P.playedBy[r.id]=1; }
+      });
       Object.entries(acc).forEach(([pid,a])=>{
         const P=S.players[pid];
         P.rounds.push({rid:r.id,rname:r.name,gross:a.gross,net:a.net,par:a.par,n:a.n});
@@ -1823,7 +1826,7 @@ function mergeCareer(list){
 // derived columns shared by the year and the career tables
 function stRow(P){
   const R={...P};
-  R.rds=P.rounds.length;
+  R.rds=P.rp||P.rounds.length;
   R.rg=P.holes?(P.gross-P.par)/P.holes*18:null;
   R.rn=P.holes?(P.net-P.par)/P.holes*18:null;
   R.f9=P.fN?P.fRel/P.fN*9:null; R.b9=P.bN?P.bRel/P.bN*9:null;
@@ -1850,7 +1853,7 @@ function stTable(rows, tcolor){
   const head=ST_COLS.map(c=>`<th class="${c.k===col.k?'on':''}" onclick="stSort('${c.k}')">${c.h}${c.k===col.k?(col.desc?' ▾':' ▴'):''}</th>`).join('');
   const body=sorted.map(r=>`<tr><td class="nm">${tcolor?`<span class="st-dot" style="background:${tcolor(r)||'#999'}"></span>`:''}${esc(stShort(r.name))}</td>${ST_COLS.map(c=>`<td class="${c.k===col.k?'on':''}">${c.f(r)}</td>`).join('')}</tr>`).join('');
   return `<div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Player</th>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <div class="muted" style="font-size:11px;margin-top:8px">Tap a column to sort. Gross/Net are strokes vs par per 18 holes. 🐦 = birdies &amp; better · 💣 = triple bogey or worse · 🔥 = mulligans used.</div>`;
+    <div class="muted" style="font-size:11px;margin-top:8px">Rds = rounds played (team formats count). Gross/Net only use rounds with individual scores. Tap a column to sort. Gross/Net are strokes vs par per 18 holes. 🐦 = birdies &amp; better · 💣 = triple bogey or worse · 🔥 = mulligans used.</div>`;
 }
 function stWinner(S){
   const ts=S.teams; if(ts.length<2) return null;
@@ -1937,7 +1940,7 @@ function stYearView(S){
   const byPts=rows.slice().sort((a,b)=>b.pts-a.pts||a.name.localeCompare(b.name));
   const ptsTbl=`<table class="st-tbl"><thead><tr><th class="nm">Player</th>${ptsHead}<th style="cursor:default">Σ</th></tr></thead><tbody>${byPts.map(p=>`<tr><td class="nm"><span class="st-dot" style="background:${tcol(p)||'#999'}"></span>${esc(stShort(p.name))}</td>${rds.map(r=>`<td>${p.byRound[r.id]!=null?fmtPts(p.byRound[r.id]):'–'}</td>`).join('')}<td class="on"><b>${fmtPts(p.pts)}</b></td></tr>`).join('')}</tbody></table>`;
   const bestNet={}; rds.forEach(r=>{ let m=null; rows.forEach(p=>{ const x=p.rounds.find(q=>q.rid===r.id); if(x&&x.n>=18&&(m==null||x.net<m)) m=x.net; }); bestNet[r.id]=m; });
-  const netTbl=`<table class="st-tbl"><thead><tr><th class="nm">Player</th>${ptsHead}</tr></thead><tbody>${byPts.map(p=>`<tr><td class="nm"><span class="st-dot" style="background:${tcol(p)||'#999'}"></span>${esc(stShort(p.name))}</td>${rds.map(r=>{ const x=p.rounds.find(q=>q.rid===r.id); if(!x) return '<td>–</td>'; const full=x.n>=18; return `<td class="${full&&x.net===bestNet[r.id]?'best':''}">${x.net}<small> (${x.gross})${full?'':' · '+x.n+'h'}</small></td>`; }).join('')}</tr>`).join('')}</tbody></table>`;
+  const netTbl=`<table class="st-tbl"><thead><tr><th class="nm">Player</th>${ptsHead}</tr></thead><tbody>${byPts.map(p=>`<tr><td class="nm"><span class="st-dot" style="background:${tcol(p)||'#999'}"></span>${esc(stShort(p.name))}</td>${rds.map(r=>{ const x=p.rounds.find(q=>q.rid===r.id); if(!x) return p.playedBy[r.id] ? '<td><small>team</small></td>' : '<td>–</td>'; const full=x.n>=18; return `<td class="${full&&x.net===bestNet[r.id]?'best':''}">${x.net}<small> (${x.gross})${full?'':' · '+x.n+'h'}</small></td>`; }).join('')}</tr>`).join('')}</tbody></table>`;
   // ---- front / back
   const fb=rows.filter(p=>p.fN>=5&&p.bN>=5).sort((a,b)=>(a.b9-a.f9)-(b.b9-b.f9));
   const fbTbl=fb.length ? `<div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Player</th><th style="cursor:default">Front 9</th><th style="cursor:default">Back 9</th><th style="cursor:default">Back − Front</th></tr></thead><tbody>${fb.map(p=>`<tr><td class="nm"><span class="st-dot" style="background:${tcol(p)||'#999'}"></span>${esc(stShort(p.name))}</td><td>${stRel(p.f9)}</td><td>${stRel(p.b9)}</td><td class="on"><b>${stRel(p.b9-p.f9)}</b></td></tr>`).join('')}</tbody></table></div><div class="muted" style="font-size:11px;margin-top:8px">Strokes vs par per nine (gross). A negative last column means they finish stronger than they start.</div>` : `<p class="muted">Needs a few holes on each nine.</p>`;
