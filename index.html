@@ -58,10 +58,24 @@ input,select{font-family:inherit;font-size:16px}
   display:flex;align-items:center;justify-content:space-between;
   border-bottom:1px solid rgba(255,255,255,.08);
 }
-.brand{display:flex;align-items:center;gap:10px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0;flex:1 1 auto}
+.brand>div{min-width:0}
 .brandLogo{width:38px;height:38px;border-radius:50%;flex:none;object-fit:cover;box-shadow:0 1px 4px rgba(0,0,0,.35)}
 .brand h1{font-size:19px;font-weight:700;text-transform:uppercase;line-height:1}
-.brand small{display:block;font-family:'Inter';font-weight:500;font-size:10px;letter-spacing:.14em;color:var(--gold);text-transform:uppercase;margin-top:3px}
+.brand small{display:block;font-family:'Inter';font-weight:500;font-size:9.5px;letter-spacing:.06em;color:var(--gold);text-transform:uppercase;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.menu-btn{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.08);color:var(--light);font-size:18px;line-height:1;display:grid;place-items:center;flex:none}
+#yearPanelHost .yp-back{position:fixed;inset:0;background:rgba(5,10,25,.55);z-index:80;opacity:0;transition:opacity .2s}
+#yearPanelHost .yp{position:fixed;top:0;right:0;bottom:0;width:min(86vw,320px);background:var(--ink,#0b1b3f);color:var(--light);z-index:81;transform:translateX(100%);transition:transform .22s ease;padding:max(18px,env(safe-area-inset-top)) 16px 18px;overflow:auto;box-shadow:-8px 0 30px rgba(0,0,0,.45);border-left:1px solid rgba(237,231,214,.14)}
+#yearPanelHost.open .yp-back{opacity:1}#yearPanelHost.open .yp{transform:none}
+.yp h2{font-family:'Oswald';font-size:20px;letter-spacing:.06em;text-transform:uppercase;margin:0}
+.yp .yp-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.yp .yp-x{width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,.08);color:var(--light);font-size:16px}
+.yp-row{display:block;width:100%;text-align:left;background:rgba(237,231,214,.07);border:1px solid rgba(237,231,214,.16);border-radius:14px;padding:12px 14px;margin-bottom:9px;color:var(--light)}
+.yp-row.on{border-color:var(--gold);background:rgba(240,180,41,.12)}
+.yp-row .y{font-family:'Oswald';font-size:24px;font-weight:600;letter-spacing:.04em}
+.yp-row .s{font-size:12px;color:rgba(237,231,214,.65);margin-top:2px}
+.yp-row .tag{float:right;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.1);margin-top:4px}
+.yp-row .tag.cur{background:var(--gold);color:var(--ink)}
 .me-chip{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.08);padding:5px 9px 5px 6px;border-radius:999px;font-size:12px;font-weight:600;color:var(--light)}
 .me-chip .av{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:15px;background:var(--paper)}
 
@@ -358,6 +372,7 @@ input,select{font-family:inherit;font-size:16px}
     <button class="me-chip" id="meChip" onclick="openIdentity()">
       <span class="av" id="meAv">＋</span><span id="meName">Sign in</span>
     </button>
+    <button class="menu-btn" id="menuBtn" onclick="openYearPanel()" aria-label="Menu — years" title="Years">☰</button>
   </div>
 </div>
 
@@ -373,7 +388,13 @@ input,select{font-family:inherit;font-size:16px}
   <button onclick="exitSandbox()" style="background:#fff;color:#0d6e4f;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px">Exit</button>
 </div>
 
+<div id="archiveBar" class="hidden" style="flex:none;width:100%;box-sizing:border-box;max-width:640px;margin:0 auto;background:#3a4a6b;color:#fff;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 14px;font-size:13px;font-weight:600">
+  <span id="archiveTxt">📚 Archived year — read-only</span>
+  <button id="archiveBtn" onclick="goYear(State.currentYear)" style="background:#fff;color:#3a4a6b;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:13px">Current year</button>
+</div>
+
 <nav class="nav" id="nav"></nav>
+<div id="yearPanelHost"></div>
 
 <div id="modalHost"></div>
 
@@ -407,6 +428,13 @@ function mergeProtectedPrefix(prefix, freshMap, currentState, extractFn){
   });
   return result;
 }
+
+/* ---------- Years ----------
+   Every year of the trip lives in the same site. 2026 is the original data and keeps its un-prefixed keys; each later year's
+   keys are prefixed "y2027:" etc. YP is the prefix of the year being viewed. A registry (global key "years") lists the years
+   and which one is current. Only the current year is writable — every older year is a read-only archive. */
+let YP='';
+const DEFAULT_REGISTRY=()=>({current:2026, years:[{year:2026, prefix:'', label:'True Blue Resort · Oct 22–25'}]});
 
 /* ---------- Shared store ---------- */
 const Store = (() => {
@@ -476,26 +504,36 @@ const Store = (() => {
     get online(){ return connected && everConnected; },
     get everConnected(){ return everConnected; },
     get pending(){ return outbox.size; },
-    async get(key){
+    // keys passed in by the app are "logical"; the year prefix (YP) is added here, so nothing else needs to know about years
+    async get(key0){ return this._get(YP+key0); },
+    async rawGet(key){ return this._get(key); },     // global keys (the years registry) — never prefixed
+    async _get(key){
       try{ const d=await sGet(key); ok(); if(d!=null) lsSet(key,d); notify(); const p=pendingVal(key); return p!==undefined?p:d; }
       catch(e){ fail(); notify(); const p=pendingVal(key); return p!==undefined?p:lsGet(key); }
     },
-    async list(prefix){
+    async list(prefix0){
+      const prefix=YP+prefix0;
       let base;
       try{ base=await sList(prefix); ok(); Object.entries(base).forEach(([k,v])=>lsSet(k,v)); }
       catch(e){ fail(); base=lsList(prefix); }
       for(const [k,entry] of outbox){ if(k.startsWith(prefix)){ if(entry.op==='del') delete base[k]; else base[k]=entry.value; } }
       notify();
-      return base;
+      if(!YP) return base;
+      const out={}; Object.entries(base).forEach(([k,v])=>{ if(k.startsWith(YP)) out[k.slice(YP.length)]=v; });
+      return out;
     },
-    async set(key,value){
+    async set(key0,value){ return this._set(YP+key0,value,false); },
+    async rawSet(key,value){ return this._set(key,value,true); },
+    async _set(key,value,raw){
       if(typeof State!=='undefined' && State.demo) return null;   // demo preview must never touch the real store
-      if(!key.startsWith('log:')) lsSet(key,value);   // audit-trail records are write-only — no need to keep a local copy
+      if(!raw && typeof State!=='undefined' && State.archive) return null;   // an archived year is read-only
+      if(!key.startsWith('log:') && !key.includes(':log:')) lsSet(key,value);   // audit-trail records are write-only — no need to keep a local copy
       outbox.set(key,{op:'set',value}); saveOutbox(); notify();
       return queuedWrite(key,'set',value);
     },
-    async del(key){
-      if(typeof State!=='undefined' && State.demo) return null;   // demo preview must never touch the real store
+    async del(key0){
+      const key=YP+key0;
+      if(typeof State!=='undefined' && (State.demo || State.archive)) return null;   // demo preview / archived year must never touch the real store
       lsDel(key); outbox.set(key,{op:'del'}); saveOutbox(); notify();
       return queuedWrite(key,'del',null);
     },
@@ -504,9 +542,10 @@ const Store = (() => {
 })();
 
 /* device-only memory (who am I on this phone) */
+const devYear=()=> YP ? '@'+YP.replace(/:$/,'') : '';   // who you are is per year (2026 keeps its original key)
 const Device = {
-  get(k){ try{ const v=localStorage.getItem('mbg-dev:'+k); return v==null?null:JSON.parse(v);}catch(e){ return null; } },
-  set(k,v){ try{ localStorage.setItem('mbg-dev:'+k, JSON.stringify(v)); }catch(e){} },
+  get(k){ try{ const v=localStorage.getItem('mbg-dev:'+k+devYear()); return v==null?null:JSON.parse(v);}catch(e){ return null; } },
+  set(k,v){ try{ localStorage.setItem('mbg-dev:'+k+devYear(), JSON.stringify(v)); }catch(e){} },
 };
 const SandboxDevice = {   // separate key so sandbox sign-in never touches the real signed-in identity
   get(k){ try{ const v=localStorage.getItem('mbg-sandbox:'+k); return v==null?null:JSON.parse(v);}catch(e){ return null; } },
@@ -762,6 +801,7 @@ function DEFAULT_SANDBOX_CONFIG(){
 }
 
 function reconcileTrip(){
+  if(State.config?.settings?.yearSeed) return false;   // a new year's config is complete as created — the 2026 defaults must not be mixed back in
   // Heal a config that was seeded by an earlier version: backfill courses,
   // round→course links, tee times and roster WITHOUT touching user edits
   // (teams, handicaps, captains, formats, groups, avatars, scores).
@@ -874,6 +914,7 @@ function migrateTwelvePointDays(){
 
 const State = {
   config:null,
+  year:2026, currentYear:2026, archive:false, registry:null,   // which year is on screen; only the current year is writable
   avatars:{},   // playerId -> emoji  (from avatar:* blobs)
   hcps:{},      // playerId -> handicap index (from hcp:* blobs)
   votes:{},     // voterId -> [candidate playerIds] (from vote:* blobs)
@@ -1479,10 +1520,33 @@ const enterableSegs = (r)=> segsOf(r).filter(s=>s.format && !s.agg);
 /* ============================================================
    LOAD + POLL
    ============================================================ */
+async function loadYears(){
+  let reg=null; try{ reg=await Store.rawGet('years'); }catch(e){}
+  if(!reg || !Array.isArray(reg.years) || !reg.years.length) reg=DEFAULT_REGISTRY();
+  State.registry=reg; State.currentYear=reg.current||reg.years[0].year;
+  const want=Number(new URLSearchParams(location.search).get('year'))||State.currentYear;
+  const ent=reg.years.find(y=>y.year===want) || reg.years.find(y=>y.year===State.currentYear) || reg.years[0];
+  State.year=ent.year; YP=ent.prefix||''; State.archive=(State.year!==State.currentYear);
+}
+// Archived years are read-only: lock every round in memory (writes are also blocked in the Store), so everyone sees the final cards.
+function applyArchive(){ if(State.archive && State.config) (State.config.rounds||[]).forEach(r=>{ r.frozen=true; }); }
+// A brand-new year: the same settings, scoring formats and round structure, but no players, teams, pairings, scores or handicaps.
+function newYearConfig(prev, year){
+  const def=DEFAULT_CONFIG(), ps=(prev&&prev.settings)||def.settings;
+  const keep=['adminPin','holeCount','scrambleHcp','useHandicaps','allowance','maxOverOn','maxMult','maxAdd'];
+  const settings={ tripName:'The Cup', tripSub:'', tripStart:'', resort:'', checkIn:'', bookingRef:'', dinners:[], hcpLocked:false, voteFrozen:false, yearSeed:year };
+  keep.forEach(k=>{ if(ps[k]!==undefined) settings[k]=JSON.parse(JSON.stringify(ps[k])); else if(def.settings[k]!==undefined) settings[k]=JSON.parse(JSON.stringify(def.settings[k])); });
+  const rounds=JSON.parse(JSON.stringify((prev&&prev.rounds)||def.rounds)).map(r=>{
+    delete r.frozen; delete r.test; r.dateLabel='Date TBD'; r.teeTime='';
+    (r.segments||[]).forEach(sg=>{ sg.matches=[]; });
+    return r;
+  });
+  return { settings, teams:def.teams.map(t=>({...t})), players:[], courses:JSON.parse(JSON.stringify((prev&&prev.courses)||def.courses)), rounds, strokeOverrides:{}, matchResults:{} };
+}
 async function loadAll(){
   let cfg=await Store.get('config');
-  if(!cfg){ cfg=DEFAULT_CONFIG(); await Store.set('config',cfg); }
-  State.config=cfg;
+  if(!cfg){ cfg=(YP==='') ? DEFAULT_CONFIG() : newYearConfig(null, State.year); await Store.set('config',cfg); }
+  State.config=cfg; applyArchive();
   if(reconcileTrip()){ await Store.set('config',State.config); }
   State.avatars={};
   const avs=await Store.list('avatar:');
@@ -1553,7 +1617,15 @@ async function refresh(){
     State.cards=merged;
     const cfgKey=State.sandbox?'sandbox-config':'config';
     const cfgProtected = recentConfigWrite[cfgKey] && Date.now()<recentConfigWrite[cfgKey];
-    if(!cfgProtected){ const cfg=await Store.get(cfgKey); if(cfg){ State.config=cfg; } }
+    if(!cfgProtected){ const cfg=await Store.get(cfgKey); if(cfg){ State.config=cfg; applyArchive(); } }
+    if(Date.now()-(State._regT||0)>30000){   // every 30s: has a newer year been started?
+      State._regT=Date.now();
+      const reg=await Store.rawGet('years');
+      if(reg && Array.isArray(reg.years) && reg.years.length){
+        State.registry=reg;
+        if(reg.current!==State.currentYear){ State.currentYear=reg.current; const was=State.archive; State.archive=(State.year!==State.currentYear); applyArchive(); updateArchiveBar(); if(State.archive&&!was) render(true); }
+      }
+    }
     updateSyncDot(Store.status());
     if(State.view==='board') updateBoard();
     else if(State.view==='enter'){ const {round,seg,key}=curEntryRefs(); updateEntryAfterSave(State.cards[key]||{holes:{},enteredBy:''}); }
@@ -1572,6 +1644,59 @@ if(typeof window!=='undefined'){ window.addEventListener('online', ()=>{ Store.f
 /* ============================================================
    IDENTITY
    ============================================================ */
+function updateArchiveBar(){
+  const bar=document.getElementById('archiveBar'); if(!bar) return;
+  bar.classList.toggle('hidden', !State.archive);
+  const t=document.getElementById('archiveTxt'); if(t) t.textContent=`📚 ${State.year} — archived, read-only`;
+  const b=document.getElementById('archiveBtn'); if(b) b.textContent=`Go to ${State.currentYear}`;
+  document.title = (State.archive?`${State.year} · `:'') + 'The Cup';
+}
+function goYear(y){
+  const u=new URL(location.href);
+  if(Number(y)===Number(State.currentYear)) u.searchParams.delete('year'); else u.searchParams.set('year',y);
+  closeYearPanel();
+  if(u.toString()===location.href) return;
+  location.assign(u.toString());
+}
+function openYearPanel(){
+  const reg=State.registry||DEFAULT_REGISTRY();
+  const rows=[...reg.years].sort((a,b)=>b.year-a.year).map(y=>{
+    const cur=y.year===State.currentYear, on=y.year===State.year;
+    const sub=(y.year===State.year ? (State.config?.settings?.tripSub||'') : (y.label||''));
+    return `<button class="yp-row ${on?'on':''}" onclick="goYear(${y.year})"><span class="tag ${cur?'cur':''}">${cur?'Current':(on?'Viewing':'Archive')}</span><div class="y">${y.year}</div><div class="s">${esc(sub||(cur?'Trip details coming soon':'Past year'))}</div></button>`;
+  }).join('');
+  const host=document.getElementById('yearPanelHost');
+  host.innerHTML=`<div class="yp-back" onclick="closeYearPanel()"></div><aside class="yp" role="dialog" aria-label="Years"><div class="yp-top"><h2>The Cup</h2><button class="yp-x" onclick="closeYearPanel()" aria-label="Close">✕</button></div>${rows}<div class="muted" style="font-size:11px;margin-top:10px;color:rgba(237,231,214,.55)">The newest year is always on top. Past years are read-only.</div></aside>`;
+  requestAnimationFrame(()=>requestAnimationFrame(()=>host.classList.add('open')));
+}
+function closeYearPanel(){
+  const host=document.getElementById('yearPanelHost'); if(!host) return;
+  host.classList.remove('open'); setTimeout(()=>{ if(!host.classList.contains('open')) host.innerHTML=''; }, 260);
+}
+function openNewYearModal(){
+  if(!State.adminAuthed || State.archive) return;
+  const next=Math.max(...(State.registry?.years||[{year:State.year}]).map(y=>y.year))+1;
+  showModal(`<div class="modal-h"><h2>Start a new year</h2><p class="muted" style="margin:4px 0 0">Creates a fresh <b>${next}</b> that becomes the current year for everyone. It keeps the same admin PIN, scoring settings, round formats and look — but starts with <b>no players, teams, pairings or scores</b>. ${State.year} stays as a read-only archive.</p></div>
+    <div class="modal-b">
+      <div class="field"><label>Year</label><input id="newYearInput" type="number" min="${State.year+1}" max="2100" value="${next}" style="text-align:center;font-size:22px"/></div>
+      <button class="btn gold" onclick="startNewYear()">Create it</button>
+      <button class="btn ghost" style="margin-top:8px" onclick="renderAdmin()">Cancel</button>
+      <div id="newYearErr" class="muted" style="color:var(--red);text-align:center;margin-top:8px"></div>
+    </div>`);
+}
+async function startNewYear(){
+  const err=(m)=>{ const e=document.getElementById('newYearErr'); if(e) e.textContent=m; };
+  if(!State.adminAuthed || State.archive) return;
+  const y=Number(document.getElementById('newYearInput')?.value);
+  const reg=(await Store.rawGet('years'))||DEFAULT_REGISTRY();
+  if(!Number.isInteger(y) || y<=Math.max(...reg.years.map(x=>x.year))) return err('Pick a year after '+Math.max(...reg.years.map(x=>x.year))+'.');
+  const prefix=`y${y}:`;
+  const cfg=newYearConfig(State.config, y);
+  await Store.rawSet(prefix+'config', cfg);
+  reg.years.push({year:y, prefix, label:''}); reg.current=y;
+  await Store.rawSet('years', reg);
+  location.assign(location.pathname);   // lands on the new current year
+}
 function updateMeChip(){
   const av=$('#meAv'), nm=$('#meName');
   if(State.me && player(State.me)){ av.textContent=avatarOf(State.me); nm.textContent=player(State.me).name.split(' ')[0]; }
@@ -3433,6 +3558,7 @@ function renderAdminGuide(){
 
       ${sec('Getting set up',[
         ['Roster, teams &amp; handicaps','Add each player and their handicap index under <b>Players &amp; handicaps</b>. Players can also set their own index when they sign in on their phone — until you lock it (below). Name your two teams and pick their colors up top.'],
+        ['New year','Admin → <b>Start a new year</b> creates next year\u2019s trip on this same site: same admin PIN, scoring settings and round formats, but no players, teams, pairings or scores. It becomes the current year for everyone, and the year before it turns into a read-only archive. Everyone switches years from the ☰ menu (top right) — the newest is always on top.'],
         ['Max score per hole','Gross max is <b>2 × par + 1</b> by default (par 4 = 9). At the max a popup asks <b>holed out or picked up</b>; past the max it is always a pick-up (recorded as the max, marked <b>P</b>). A pick-up can never win a hole: a real score beats it only if that net is equal to or lower than the pick-up\u2019s net (otherwise the hole is halved), and if both sides picked up the hole is halved. Change the numbers, or switch it off, in the Control Room next to Lock handicaps.'],
         ['Lock handicaps','Once everyone\u2019s number is right, flip <b>Lock handicaps</b> so players can\u2019t change their index the night before. You can still edit anyone\u2019s.'],
         ['Courses &amp; tees','Each course has selectable tees — pick the ones you\u2019re actually playing and the rating/slope (and everyone\u2019s course handicap) update automatically.'],
@@ -3472,6 +3598,7 @@ function renderAdminGuide(){
     </div>`);
 }
 function openAdmin(){
+  if(State.archive){ showModal(`<div class="modal-h"><h2>${State.year} is archived</h2><p class="muted" style="margin:4px 0 0">Past years are read-only. Switch to ${State.currentYear} from the ☰ menu to manage the current trip.</p></div><div class="modal-b"><button class="btn gold" onclick="goYear(State.currentYear)">Go to ${State.currentYear}</button><button class="btn ghost" style="margin-top:8px" onclick="closeModal()">Close</button></div>`); return; }
   if(State.adminAuthed) return renderAdmin();
   showModal(`<div class="modal-h"><h2>Admin PIN</h2><p class="muted" style="margin:4px 0 0">Enter the organizer's PIN to manage the trip.</p></div>
     <div class="modal-b">
@@ -3554,6 +3681,7 @@ function renderAdmin(){
         <button class="btn ghost sm" style="width:100%" onclick="editPlayer('')">+ Add player</button>
         <button class="btn ghost sm" style="width:100%" onclick="seedSample()">Reload trip roster</button>
       </div>
+      <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="openNewYearModal()">📅 Start a new year…</button>
       <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="renderSizesAdmin()">👕 Apparel sizes &amp; order summary</button>
 
       <div class="divider"></div>
@@ -3634,8 +3762,18 @@ async function setFrozen(rid,on){ const r=State.config.rounds.find(x=>x.id===rid
 
 /* admin mutations */
 const recentConfigWrite = {};   // key ('config' or 'sandbox-config') -> timestamp until which local config should win over a poll fetch
+async function syncYearLabel(){
+  try{
+    if(State.archive||State.sandbox||State.demo) return;
+    const sub=State.config?.settings?.tripSub||'';
+    const reg=(await Store.rawGet('years'))||DEFAULT_REGISTRY();
+    const ent=reg.years.find(y=>y.year===State.year); if(!ent || ent.label===sub) return;
+    ent.label=sub; await Store.rawSet('years',reg); State.registry=reg;
+  }catch(e){}
+}
 async function saveConfig(){
   const key=State.sandbox?'sandbox-config':'config';
+  setTimeout(syncYearLabel, 0);
   recentConfigWrite[key]=Date.now()+20000;   // protect for 20s — long enough to cover normal sync lag
   Store.set(key,State.config);
 }
@@ -3892,7 +4030,9 @@ requestAnimationFrame(()=>{ const sl=document.getElementById('splashLogo'); if(s
 (async function boot(){
   const splashStart = Date.now();
   Store.onStatus(()=>{ updateSyncDot(); if(State.view==='enter') updateSyncNote(); });
+  await loadYears();
   await loadAll();
+  updateArchiveBar();
   updateMeChip();
   render(true);
   updateSyncDot();
