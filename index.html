@@ -736,22 +736,40 @@ function burnLine(){
   return lines[idx];
 }
 
+// PGA-style card integrity: a skipped hole (a gap before the last hole entered) — or, once the round is frozen/complete, a card that
+// was never finished — doesn't count toward the ranking. Someone still playing, in order, is fine.
+function playerRoundIntegrity(round, pid){
+  let expected=0, thru=0, gap=null;
+  const order=[];   // every hole this player should score, in the order they'd play them (front segment, then back)
+  [...segsOf(round)].sort((x,y)=>x.start-y.start).forEach(seg=>{
+    if(!seg.format||seg.agg||FORMATS[seg.format]?.side==='group') return;
+    const card=State.cards[cardKey(round.id,seg.id,pid)];
+    if(!card?.holes && !matchOfSide(seg,pid)) return;
+    const len=seg.end-seg.start+1, start=startHoleForSide(seg,pid);
+    expected+=len;
+    for(let i=0;i<len;i++){ let h=start+i; if(h>seg.end) h-=len; order.push({h,v:card?.holes?.[h]}); }
+  });
+  let last=-1; order.forEach((o,i)=>{ if(o.v!=null){ last=i; thru++; } });
+  for(let i=0;i<last;i++){ if(order[i].v==null){ gap=order[i].h; break; } }
+  const done=!!(round.frozen||roundComplete(round));
+  return {thru,expected,gap,incomplete: gap!=null || (done && thru<expected)};
+}
 function playerRoundStat(round, pid){
   const c=courseOf(round), pars=c?.pars||[]; let gross=0,net=0,thru=0,blow=0,parPlayed=0,any=false;
   segsOf(round).forEach(seg=>{ if(!seg.format||FORMATS[seg.format]?.side==='group') return; const card=State.cards[cardKey(round.id,seg.id,pid)]; if(!card?.holes) return; Object.keys(card.holes).forEach(h=>{ const g=card.holes[h]; if(g==null) return; any=true; gross+=g; thru++; const par=pars[h-1]||4; parPlayed+=par; if(g-par>=3) blow++; }); const n=netForCard(pid,card,false,round,seg.format); if(n!=null) net+=n; });
   return any?{pid,gross,net,thru,blow,parPlayed}:null;
 }
 function roundGoats(round){
-  const stats=(State.config.players||[]).map(p=>playerRoundStat(round,p.id)).filter(s=>s&&s.thru>=3);
+  const stats=(State.config.players||[]).map(p=>playerRoundStat(round,p.id)).filter(s=>s&&s.thru>=3&&!playerRoundIntegrity(round,s.pid).incomplete);
   if(!stats.length) return null;
-  const byNet=[...stats].sort((a,b)=>a.net-b.net);
+  const byNet=[...stats].sort((a,b)=>(a.net-a.parPlayed)-(b.net-b.parPlayed));
   return { hero:byNet[0], goat:byNet[byNet.length-1] };
 }
 function shameStats(){
   const worst=worstHole();
   const blowCount={}; scanHoles(o=>{ if(o.gross-o.par>=3) blowCount[o.pid]=(blowCount[o.pid]||0)+1; });
   let mostBlow=null; Object.entries(blowCount).forEach(([pid,n])=>{ if(!mostBlow||n>mostBlow.n) mostBlow={pid,n}; });
-  const totalNet={}; (State.config.players||[]).forEach(p=>{ let s=0,any=false; (State.config.rounds||[]).forEach(r=>{ const st=playerRoundStat(r,p.id); if(st){ s+=st.net; any=true; } }); if(any) totalNet[p.id]=s; });
+  const totalNet={}; (State.config.players||[]).forEach(p=>{ let s=0,any=false; (State.config.rounds||[]).forEach(r=>{ const st=playerRoundStat(r,p.id); if(st && !playerRoundIntegrity(r,p.id).incomplete){ s+=st.net-st.parPlayed; any=true; } }); if(any) totalNet[p.id]=s; });
   let dfl=null; Object.entries(totalNet).forEach(([pid,n])=>{ if(!dfl||n>dfl.n) dfl={pid,n}; });
   return { worst, mostBlow, dfl };
 }
@@ -2711,7 +2729,10 @@ function playerBoard(round){
       Object.keys(card.holes).forEach(h=>{ if(card.holes[h]!=null) s.parPlayed+=pars[h-1]||0; });
     });
   });
-  const rows=Object.entries(stats).map(([pid,s])=>({pid,...s})).sort((a,b)=>a.net-b.net);
+  const byToPar=(a,b)=>(a.net-a.parPlayed)-(b.net-b.parPlayed)||b.thru-a.thru;
+  const all=Object.entries(stats).map(([pid,s])=>({pid,...s,integ:playerRoundIntegrity(round,pid)}));
+  const ranked=all.filter(r=>!r.integ.incomplete).sort(byToPar), unranked=all.filter(r=>r.integ.incomplete).sort(byToPar);
+  const rows=[...ranked,...unranked];
   if(!rows.length){
     return `<div class="card"><div class="empty"><div class="big">🏌️</div><b>No individual scores yet</b><p class="muted" style="margin-top:6px">Singles, better ball, and shramble show up here. Scramble is team-only.</p></div></div>`;
   }
@@ -2720,17 +2741,19 @@ function playerBoard(round){
     const relN=Math.round(r.gross-r.parPlayed);
     const cls=relN<0?'under':relN>0?'over':'even';
     const relTxt=relN===0?'E':(relN>0?'+'+relN:relN);
-    return `<div class="row">
-      <div style="width:18px;text-align:center;font-family:'Oswald';font-weight:700;color:var(--text-dim)">${i+1}</div>
+    const out=r.integ.incomplete, firstOut=out && i===ranked.length;
+    const note=out ? (r.integ.gap!=null ? ` · <b style="color:var(--red)">Missing hole ${r.integ.gap}</b>` : ` · <b style="color:var(--red)">Incomplete (${r.thru}/${r.integ.expected})</b>`) : '';
+    return `${firstOut?`<div class="muted" style="font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:10px 4px 2px;border-top:2px solid var(--line)">Not ranked — card incomplete</div>`:''}<div class="row" style="${out?'opacity:.62':''}">
+      <div style="width:18px;text-align:center;font-family:'Oswald';font-weight:700;color:var(--text-dim)">${out?'–':i+1}</div>
       <div class="teamdot" style="background:${t?.color||'#999'}"></div>
       <div class="av" style="border-color:${t?.color||'transparent'}">${avatarOf(r.pid)}</div>
-      <div class="nm"><b>${esc(p?.name||'—')}</b><span>Thru ${r.thru} · ${Math.round(r.gross)} gross${useHcp()?' · Idx '+fmtH(hcpOf(r.pid)):''}</span></div>
+      <div class="nm"><b>${esc(p?.name||'—')}</b><span>Thru ${r.thru} · ${Math.round(r.gross)} gross${useHcp()?' · Idx '+fmtH(hcpOf(r.pid)):''}${note}</span></div>
       <div class="rel ${cls}">${relTxt}</div>
       <div class="sc">${Math.round(r.net)}</div>
     </div>`;
   }).join('');
   return `<div class="card"><div class="eyebrow">${esc(round.name)} · Individual ${useHcp()?'net':'gross'}</div>${body}
-    <div class="muted" style="margin-top:10px;font-size:11px">${useHcp()?'Net shown big, gross in the line below':'Gross shown'} · score-to-par at right · lowest wins.</div></div>`;
+    <div class="muted" style="margin-top:10px;font-size:11px">${useHcp()?'Net shown big, gross in the line below':'Gross shown'} · score-to-par at right · ranked by ${useHcp()?'net':'gross'} vs par on the holes played, lowest wins. A skipped hole (or an unfinished card once the round is done) drops a player below the line until it's fixed.</div></div>`;
 }
 // Pre-trip countdown — shown above the leaderboard until kickoff, then gone for good.
 // Renders once; tickCountdown() then updates the digits in place every second
