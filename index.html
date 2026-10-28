@@ -1534,11 +1534,11 @@ function applyArchive(){ if(State.archive && State.config) (State.config.rounds|
 function newYearConfig(prev, year){
   const def=DEFAULT_CONFIG(), ps=(prev&&prev.settings)||def.settings;
   const keep=['adminPin','holeCount','scrambleHcp','useHandicaps','allowance','maxOverOn','maxMult','maxAdd'];
-  const settings={ tripName:'The Cup', tripSub:'', tripStart:'', resort:'', checkIn:'', bookingRef:'', dinners:[], hcpLocked:false, voteFrozen:false, yearSeed:year };
+  const settings={ tripName:'The Cup', tripSub:'', tripStart:'', resort:'', checkIn:'', bookingRef:'', dinners:[], hcpLocked:false, voteFrozen:false, yearSeed:year, blankStart:true };
   keep.forEach(k=>{ if(ps[k]!==undefined) settings[k]=JSON.parse(JSON.stringify(ps[k])); else if(def.settings[k]!==undefined) settings[k]=JSON.parse(JSON.stringify(def.settings[k])); });
   const rounds=JSON.parse(JSON.stringify((prev&&prev.rounds)||def.rounds)).map(r=>{
-    delete r.frozen; delete r.test; r.dateLabel='Date TBD'; r.teeTime='';
-    (r.segments||[]).forEach(sg=>{ sg.matches=[]; });
+    delete r.frozen; delete r.test; r.dateLabel='Date TBD'; r.teeTime=''; r.courseId='';   // course and formats are decided later
+    (r.segments||[]).forEach(sg=>{ sg.matches=[]; sg.format=''; });
     return r;
   });
   return { settings, teams:def.teams.map(t=>({...t})), players:[], courses:JSON.parse(JSON.stringify((prev&&prev.courses)||def.courses)), rounds, strokeOverrides:{}, matchResults:{} };
@@ -1547,6 +1547,10 @@ async function loadAll(){
   let cfg=await Store.get('config');
   if(!cfg){ cfg=(YP==='') ? DEFAULT_CONFIG() : newYearConfig(null, State.year); await Store.set('config',cfg); }
   State.config=cfg; applyArchive();
+  if(!State.archive && cfg.settings?.yearSeed && !cfg.settings.blankStart){   // a year created before location/formats defaulted to blank: clear them once
+    (cfg.rounds||[]).forEach(r=>{ r.courseId=''; (r.segments||[]).forEach(sg=>{ sg.format=''; sg.matches=[]; }); });
+    cfg.settings.blankStart=true; await Store.set('config',cfg);
+  }
   if(reconcileTrip()){ await Store.set('config',State.config); }
   State.avatars={};
   const avs=await Store.list('avatar:');
