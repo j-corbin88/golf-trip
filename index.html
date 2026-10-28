@@ -1738,6 +1738,10 @@ async function statsLoadYear(entry){
   const hcps={}; Object.entries(hc).forEach(([k,v])=>{ if(v?.index!=null) hcps[k.split(':')[1]]=v.index; });
   return {year:entry.year, cfg, cards, hcps};
 }
+// team colors are tuned for dark backgrounds — darken them for text on the cream cards, and pick a readable ink for text sitting on a color
+const stRGB=(c)=>{ const h=String(c||'').replace('#',''); const f=h.length===3?h.split('').map(x=>x+x).join(''):h; const n=parseInt(f,16); return isNaN(n)||f.length!==6?[90,100,120]:[(n>>16)&255,(n>>8)&255,n&255]; };
+const stInk=(c)=>{ const [r,g,b]=stRGB(c); return `rgb(${Math.round(r*.62)},${Math.round(g*.62)},${Math.round(b*.62)})`; };
+const stOn=(c)=>{ const [r,g,b]=stRGB(c); return (0.299*r+0.587*g+0.114*b)>150 ? 'var(--ink)' : '#fff'; };
 const ST_SUM=['pts','w','l','h','holes','gross','net','par','eagles','birdies','pars','bogeys','doubles','blows','fN','fRel','bN','bRel','mulls'];
 function computeYearStats(d){
   return withYearData(d, ()=>{
@@ -1798,7 +1802,7 @@ function computeYearStats(d){
     Object.entries(ps).forEach(([pid,o])=>{ const P=S.players[pid]; if(P){ P.pts=o.pts; P.w=o.w; P.l=o.l; P.h=o.h; P.byRound=o.by; } });
     S.cup=tripPoints();
     const played=rounds.filter(r=>segsOf(r).some(s=>s.format));
-    S.complete=played.length>0 && played.every(r=>roundComplete(r));
+    S.complete=played.length>0 && played.every(r=>r.frozen||roundComplete(r));   // a locked round is finished
     S.has=Object.values(S.players).some(p=>p.holes>0||p.w+p.l+p.h>0);
     return S;
   });
@@ -1836,8 +1840,8 @@ const ST_COLS=[
   {k:'pars',h:'Pars',f:r=>r.pars,v:r=>r.pars,desc:true},
   {k:'bogeys',h:'Bog',f:r=>r.bogeys,v:r=>r.bogeys,desc:true},
   {k:'doubles',h:'Dbl',f:r=>r.doubles,v:r=>r.doubles,desc:true},
-  {k:'blows',h:'💥',f:r=>r.blows,v:r=>r.blows,desc:true},
-  {k:'mulls',h:'Mull',f:r=>r.mulls,v:r=>r.mulls,desc:true},
+  {k:'blows',h:'💣',f:r=>r.blows,v:r=>r.blows,desc:true},
+  {k:'mulls',h:'🔥',f:r=>r.mulls,v:r=>r.mulls,desc:true},
 ];
 function stTable(rows, tcolor){
   const col=ST_COLS.find(c=>c.k===StatsUI.sort)||ST_COLS[0];
@@ -1846,7 +1850,7 @@ function stTable(rows, tcolor){
   const head=ST_COLS.map(c=>`<th class="${c.k===col.k?'on':''}" onclick="stSort('${c.k}')">${c.h}${c.k===col.k?(col.desc?' ▾':' ▴'):''}</th>`).join('');
   const body=sorted.map(r=>`<tr><td class="nm">${tcolor?`<span class="st-dot" style="background:${tcolor(r)||'#999'}"></span>`:''}${esc(stShort(r.name))}</td>${ST_COLS.map(c=>`<td class="${c.k===col.k?'on':''}">${c.f(r)}</td>`).join('')}</tr>`).join('');
   return `<div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Player</th>${head}</tr></thead><tbody>${body}</tbody></table></div>
-    <div class="muted" style="font-size:11px;margin-top:8px">Tap a column to sort. Gross/Net are strokes vs par per 18 holes. 🐦 = birdies &amp; better · 💥 = triple bogey or worse · Mull = mulligans used.</div>`;
+    <div class="muted" style="font-size:11px;margin-top:8px">Tap a column to sort. Gross/Net are strokes vs par per 18 holes. 🐦 = birdies &amp; better · 💣 = triple bogey or worse · 🔥 = mulligans used.</div>`;
 }
 function stWinner(S){
   const ts=S.teams; if(ts.length<2) return null;
@@ -1870,7 +1874,7 @@ function stAwards(items){
   const pp=items.people.filter(p=>p.holes>0||p.w+p.l+p.h>0);
   const mp=best(pp,p=>p.pts,false);   if(mp && mp.v>0) out.push(row('🏆','Most match points',`${esc(stShort(mp.x.name))} — ${fmtPts(mp.v)} pts (${mp.x.w}-${mp.x.l}-${mp.x.h})`));
   const mb=best(pp,p=>p.bird,false);  if(mb && mb.v>0) out.push(row('🐦','Most birdies',`${esc(stShort(mb.x.name))} — ${mb.v}`));
-  const mx=best(pp,p=>p.blows,false); if(mx && mx.v>0) out.push(row('💥','Most triple-bogey-or-worse holes',`${esc(stShort(mx.x.name))} — ${mx.v}`));
+  const mx=best(pp,p=>p.blows,false); if(mx && mx.v>0) out.push(row('💣','Most triple-bogey-or-worse holes',`${esc(stShort(mx.x.name))} — ${mx.v}`));
   const ml=best(pp,p=>p.mulls,false); if(ml && ml.v>0) out.push(row('🔥','Mulligan king',`${esc(stShort(ml.x.name))} — ${ml.v} used`));
   const cl=best(pp.filter(p=>p.fN>=9&&p.bN>=9),p=>p.b9-p.f9,true);  if(cl) out.push(row('🧊','Best closer',`${esc(stShort(cl.x.name))} — ${stRel(cl.x.b9)} on the back vs ${stRel(cl.x.f9)} on the front (per 9)`));
   const fd=best(pp.filter(p=>p.fN>=9&&p.bN>=9),p=>p.b9-p.f9,false);  if(fd && fd.v>0 && fd.x!==cl?.x) out.push(row('📉','Back-nine fade',`${esc(stShort(fd.x.name))} — ${stRel(fd.x.b9)} on the back vs ${stRel(fd.x.f9)} on the front (per 9)`));
@@ -1882,7 +1886,7 @@ function stAllTime(){
     if(!s.has) return `<div class="row"><div class="st-y">${s.year}</div><div class="nm"><b style="color:var(--text-dim)">Not played yet</b><span>${esc(s.label||'')}</span></div></div>`;
     const w=stWinner(s);
     const title=!w?'—':(w.done?(w.w?`${esc(w.w.name)} wins`:'Tied'):'In progress');
-    return `<div class="row st-click" onclick="stTab(${s.year})"><div class="st-y">${s.year}</div><div class="nm"><b>${title}</b><span>${esc(s.label||'')}${s.label?' · ':''}tap for the full ${s.year} breakdown</span></div>${w?`<div class="sc" style="font-size:19px"><span style="color:${w.a.color}">${fmtPts(w.pa)}</span>–<span style="color:${w.b.color}">${fmtPts(w.pb)}</span></div>`:''}</div>`;
+    return `<div class="row st-click" onclick="stTab(${s.year})"><div class="st-y">${s.year}</div><div class="nm"><b>${title}</b><span>${esc(s.label||'')}${s.label?' · ':''}tap for the full ${s.year} breakdown</span></div>${w?`<div class="sc" style="font-size:19px"><span style="color:${stInk(w.a.color)}">${fmtPts(w.pa)}</span>–<span style="color:${stInk(w.b.color)}">${fmtPts(w.pb)}</span></div>`:''}</div>`;
   }).join('');
   if(!ys.length) return `<div class="card"><div class="eyebrow">The Cup, year by year</div>${hist}</div><div class="card"><div class="empty"><div class="big">📊</div><b>No scores in yet</b><p class="muted" style="margin-top:6px">Stats build themselves from the live scores.</p></div></div>`;
   const C=mergeCareer(ys), career=Object.values(C).map(o=>stRow({...o,rounds:o.rounds}));
@@ -1898,7 +1902,7 @@ function stAllTime(){
   return `
   <div class="card"><div class="eyebrow">The Cup, year by year</div>${hist}</div>
   <div class="card"><div class="eyebrow">Career</div>${stTable(career, null)}</div>
-  <div class="card"><div class="eyebrow">Year over year</div><div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Year</th><th>Golfers</th><th>Rds</th><th>Field gross/rd</th><th>🐦</th><th>💥</th><th>Mull</th></tr></thead><tbody>${yoy}</tbody></table></div></div>
+  <div class="card"><div class="eyebrow">Year over year</div><div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Year</th><th>Golfers</th><th>Rds</th><th>Field gross/rd</th><th>🐦</th><th>💣</th><th>🔥</th></tr></thead><tbody>${yoy}</tbody></table></div></div>
   <div class="card"><div class="eyebrow">Match points by year</div><div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Player</th>${yrs.map(y=>`<th style="cursor:default">${y}</th>`).join('')}<th style="cursor:default">Total</th></tr></thead><tbody>${ptsRows}</tbody></table></div></div>
   <div class="card"><div class="eyebrow">Record book</div>${rec}</div>`;
 }
@@ -1911,20 +1915,20 @@ function stYearView(S){
   // ---- Cup + race by round
   let cup='';
   if(w){
-    const big=(t,p)=>`<div style="flex:1;text-align:center"><div style="font-family:'Oswald';font-size:44px;font-weight:700;line-height:1;color:${t.color}">${fmtPts(p)}</div><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-top:4px">${esc(t.name)}</div></div>`;
+    const big=(t,p)=>`<div style="flex:1;text-align:center"><div style="font-family:'Oswald';font-size:44px;font-weight:700;line-height:1;color:${stInk(t.color)}">${fmtPts(p)}</div><div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-top:4px">${esc(t.name)}</div></div>`;
     cup=`<div style="display:flex;align-items:center;gap:6px;margin:6px 0 4px">${big(w.a,w.pa)}<div style="color:var(--text-dim);font-weight:700">–</div>${big(w.b,w.pb)}</div>
       <div style="text-align:center;font-weight:700;margin-bottom:12px">${w.done?(w.w?`🏆 ${esc(w.w.name)} take the Cup`:'🤝 Tied'):'⏳ In progress'}</div>`;
   }
   const race=S.rounds.filter(r=>r.segs.length).map(r=>{
     const tot=T.reduce((t,x)=>t+(r.team[x.id]||0),0);
-    const bar=tot>0 ? `<div class="st-bar">${T.map(t=>`<i style="flex:${r.team[t.id]||0};background:${t.color}">${r.team[t.id]?fmtPts(r.team[t.id]):''}</i>`).join('')}</div>` : `<div class="muted" style="font-size:12px;padding:4px 0">Nothing scored yet</div>`;
+    const bar=tot>0 ? `<div class="st-bar">${T.map(t=>`<i style="flex:${r.team[t.id]||0};background:${t.color};color:${stOn(t.color)}">${r.team[t.id]?fmtPts(r.team[t.id]):''}</i>`).join('')}</div>` : `<div class="muted" style="font-size:12px;padding:4px 0">Nothing scored yet</div>`;
     const segs=r.segs.filter(s=>s.n).map(s=>`${esc(s.label||FORMATS[s.fmt]?.label||'')} <b>${T.map(t=>fmtPts(s.pts[t.id]||0)).join('–')}</b>`).join(' &nbsp;·&nbsp; ');
-    const run=T.map(t=>`<span style="color:${t.color};font-weight:700">${fmtPts(r.cum[t.id]||0)}</span>`).join('–');
+    const run=T.map(t=>`<span style="color:${stInk(t.color)};font-weight:700">${fmtPts(r.cum[t.id]||0)}</span>`).join('–');
     return `<div class="st-rd"><div class="st-rdh"><b>${esc(r.name)}</b><span>${esc([r.date,r.course].filter(Boolean).join(' · '))}</span><em>${tot>0?'Total '+run:''}</em></div>${bar}${segs?`<div class="st-segs">${segs}</div>`:''}</div>`;
   }).join('');
   // ---- format scoreboard
   const fmts=[...new Set(Object.values(S.fmtRec).flatMap(o=>Object.keys(o)))];
-  const fmtTbl=fmts.length ? `<div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Format</th>${T.map(t=>`<th style="cursor:default;color:${t.color}">${esc(t.name)}</th>`).join('')}</tr></thead><tbody>${fmts.map(f=>`<tr><td class="nm">${esc(FORMATS[f]?.label||f)}</td>${T.map(t=>{ const v=S.fmtRec[t.id]?.[f]; return `<td>${v?`${v.w}-${v.l}-${v.h}`:'–'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div><div class="muted" style="font-size:11px;margin-top:6px">Matches won – lost – halved.</div>` : '';
+  const fmtTbl=fmts.length ? `<div class="st-scroll"><table class="st-tbl"><thead><tr><th class="nm">Format</th>${T.map(t=>`<th style="cursor:default;color:${stInk(t.color)}">${esc(t.name)}</th>`).join('')}</tr></thead><tbody>${fmts.map(f=>`<tr><td class="nm">${esc(FORMATS[f]?.label||f)}</td>${T.map(t=>{ const v=S.fmtRec[t.id]?.[f]; return `<td>${v?`${v.w}-${v.l}-${v.h}`:'–'}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div><div class="muted" style="font-size:11px;margin-top:6px">Matches won – lost – halved.</div>` : '';
   // ---- players
   const rows=Object.values(S.players).filter(p=>p.holes>0||p.w+p.l+p.h>0).map(stRow);
   // ---- round by round, individual
@@ -1988,6 +1992,7 @@ async function stLoad(){
       const d=await statsLoadYear(e);
       if(!d) return {year:e.year,label:e.label||'',has:false,teams:[],players:{},rounds:[],cup:{},recRounds:[],recHoles:[],fmtRec:{}};
       const S=computeYearStats(d); S.label=d.cfg.settings?.tripSub||e.label||'';
+      if(!cur && S.has) S.complete=true;   // a past year is over, even if a match or two never got a result
       if(!cur) _stCache[e.year]=S;
       return S;
     }catch(err){ console.warn('stats',e.year,err); return {year:e.year,label:e.label||'',has:false,teams:[],players:{},rounds:[],cup:{},recRounds:[],recHoles:[],fmtRec:{}}; }
