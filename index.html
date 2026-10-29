@@ -80,6 +80,7 @@ input,select{font-family:inherit;font-size:16px}
 
 .pl-card .pl-top{display:flex;gap:12px;justify-content:space-between;align-items:flex-start}
 .pl-price{font-family:'Oswald';font-size:24px;font-weight:700;line-height:1;text-align:right;white-space:nowrap}.pl-price small{display:block;font-family:inherit;font-size:10px;font-weight:600;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;margin-top:3px}
+.pl-links{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}.pl-links:empty{display:none}.pl-chip{font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;background:var(--cream,#f4efe2);color:var(--blue);text-decoration:none;border:1px solid rgba(0,0,0,.08)}.pl-courses a{color:var(--blue);text-decoration:none;font-weight:600}
 .pl-courses{display:flex;flex-direction:column;gap:5px;margin-top:10px}
 .pl-courses span{font-size:13.5px;display:flex;align-items:center;gap:8px}.pl-courses i{font-style:normal;width:20px;height:20px;border-radius:50%;background:var(--paper2);border:1px solid var(--line);display:grid;place-items:center;font-size:11px;font-weight:700;flex:none}
 .pl-vote{display:flex;gap:10px;margin-top:12px}
@@ -2096,11 +2097,11 @@ State.planMonth=null;
 const planOn=()=>!!State.config?.settings?.planning;
 const planTouched={};   // key -> ts of our own recent write, so a lagging poll can't undo a tap
 const PLAN_SEED=[
-  {location:'Orlando',lodging:'Windsor Island (10 bedroom house)',price:829,rounds:3,courses:['Celebration','International Course (Omni Resort)','Crooked Cat (Orange County National)']},
-  {location:'Orlando',lodging:'Reunion Resort · 3 bed villas',price:929,rounds:3,courses:['Palmer Course (Reunion)','Watson Course (Reunion)','Nicklaus Course (Reunion)']},
-  {location:'Streamsong',lodging:'Hotel room · 2 bed queen',price:2197.5,rounds:3,courses:['Red','Blue','Bone Valley']},
-  {location:'Bay Hill',lodging:'Hotel room · 2 bed queen',price:1699,rounds:3,courses:['Shingle Creek','Waldorf Astoria','Bay Hill']},
-  {location:'Talamore',lodging:'Talamore Resort · 3 and 2 bed villas',price:1157,rounds:3,courses:['Mid Pines','Pine Needles','Mid South'],notes:'Price based on 2026 golf rates.'},
+  {location:'Orlando',lodging:'Windsor Island (10 bedroom house)',price:829,rounds:3,map:'Windsor Island Resort, Davenport, FL',courses:[{name:'Celebration',url:'https://www.celebrationgolf.com/'},'International Course (Omni Resort)','Crooked Cat (Orange County National)']},
+  {location:'Orlando',lodging:'Reunion Resort · 3 bed villas',price:929,rounds:3,map:'Reunion Resort, Kissimmee, FL',courses:['Palmer Course (Reunion)','Watson Course (Reunion)','Nicklaus Course (Reunion)']},
+  {location:'Streamsong',lodging:'Hotel room · 2 bed queen',price:2197.5,rounds:3,url:'https://www.streamsongresort.com/',map:'Streamsong Resort, Bowling Green, FL',courses:['Red','Blue','Bone Valley']},
+  {location:'Bay Hill',lodging:'Hotel room · 2 bed queen',price:1699,rounds:3,lodgingUrl:'https://bayhill.com',map:"Arnold Palmer's Bay Hill Club & Lodge, Orlando, FL",courses:[{name:'Shingle Creek',url:'https://www.rosenshinglecreek.com/'},'Waldorf Astoria',{name:'Bay Hill',url:'https://bayhill.com'}]},
+  {location:'Talamore',lodging:'Talamore Resort · 3 and 2 bed villas',price:1157,rounds:3,map:'Talamore Golf Resort, Southern Pines, NC',courses:['Mid Pines','Pine Needles','Mid South'],notes:'Price based on 2026 golf rates.'},
 ];
 const planMoney=(n)=>{ const v=Number(n), f=Number.isInteger(v)?0:2; return '$'+v.toLocaleString(undefined,{minimumFractionDigits:f,maximumFractionDigits:2}); };
 async function loadPlan(){
@@ -2177,6 +2178,20 @@ function planWeekWho(isoMon){
       <button class="btn ghost" onclick="closeModal()">Close</button></div>`);
 }
 /* ---------- the Plan page ---------- */
+function planSafeUrl(u){ u=(u||'').trim(); if(!u) return ''; if(!/^https?:\/\//i.test(u)) u='https://'+u; return /^https?:\/\/[^\s]+\.[^\s]+/i.test(u)?u:''; }
+function planMapUrl(p){
+  const m=(p.map||'').trim();
+  if(/^https?:\/\//i.test(m)) return m;
+  const q=m||[p.lodging&&!/^hotel room/i.test(p.lodging)?p.lodging:'',p.location].filter(Boolean).join(' ');
+  return q?'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(q):'';
+}
+function planLinkChips(p){
+  const out=[], add=(ic,label,u)=>{ u=planSafeUrl(u); if(u) out.push(`<a class="pl-chip" href="${esc(u)}" target="_blank" rel="noopener">${ic} ${esc(label)}</a>`); };
+  add('🌐','Website',p.url); add('🏨','Stay',p.lodgingUrl);
+  const mu=planMapUrl(p); if(mu) out.push(`<a class="pl-chip" href="${esc(mu)}" target="_blank" rel="noopener">📍 Map</a>`);
+  (p.links||[]).forEach(l=>add('🔗',l.label||'Link',l.url));
+  return out.join('');
+}
 function viewPlan(){
   const P=State.plan, players=State.config.players||[], me=State.me, mp=me&&player(me);
   const back=planOn()?'':`<button class="btn ghost sm" style="width:auto;margin-bottom:10px" onclick="go('more')">‹ Back to More</button>`;
@@ -2200,9 +2215,9 @@ function viewPlan(){
       return `<div class="card pl-card">
         <div class="pl-top"><div style="min-width:0"><div class="eyebrow" style="margin-bottom:2px">${esc(p.location||'')}${p.rounds?` · ${p.rounds} rounds`:''}</div><h3 style="font-size:18px;margin:0">${esc(p.lodging||p.location||'')}</h3></div>
           ${p.price!=null&&p.price!==''?`<div class="pl-price">${planMoney(p.price)}<small>per person</small></div>`:''}</div>
-        ${(p.courses||[]).length?`<div class="pl-courses">${p.courses.map((c,i)=>`<span><i>${i+1}</i>${esc(c)}</span>`).join('')}</div>`:''}
+        ${(p.courses||[]).length?`<div class="pl-courses">${p.courses.map((c,i)=>{ const n=typeof c==='string'?c:c.name, u=typeof c==='string'?'':planSafeUrl(c.url); return `<span><i>${i+1}</i>${u?`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(n)} ↗</a>`:esc(n)}</span>`; }).join('')}</div>`:''}
         ${p.notes?`<div class="muted" style="margin-top:8px">${esc(p.notes)}</div>`:''}
-        ${p.url?`<div style="margin-top:6px"><a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:var(--blue);font-weight:600;font-size:13px">Details ↗</a></div>`:''}
+        <div class="pl-links">${planLinkChips(p)}</div>
         <div class="pl-vote"><button class="pv ${mine===1?'on up':''}" onclick="planVote('${p.id}',1)">👍 ${up.length}</button><button class="pv ${mine===-1?'on dn':''}" onclick="planVote('${p.id}',-1)">👎 ${dn.length}</button></div>
         ${(up.length||dn.length)?`<div class="pl-who">${up.length?`<div>👍 ${names(up)}</div>`:''}${dn.length?`<div>👎 ${names(dn)}</div>`:''}</div>`:''}
       </div>`;
@@ -2286,8 +2301,11 @@ function editPlace(id){
     <div class="field"><label>Location</label><input id="plLoc" value="${esc(p.location||'')}" placeholder="e.g. Orlando"/></div>
     <div class="field"><label>Lodging</label><input id="plLodge" value="${esc(p.lodging||'')}" placeholder="e.g. Reunion Resort · 3 bed villas"/></div>
     <div class="two"><div class="field"><label>Price per person ($)</label><input id="plPrice" type="number" step="0.01" value="${p.price??''}"/></div><div class="field"><label>Rounds</label><input id="plRounds" type="number" value="${p.rounds??3}"/></div></div>
-    <div class="field"><label>Courses (one per line)</label><textarea id="plCourses" rows="4" style="width:100%">${esc((p.courses||[]).join('\n'))}</textarea></div>
-    <div class="field"><label>Link (optional)</label><input id="plUrl" value="${esc(p.url||'')}" placeholder="https://"/></div>
+    <div class="field"><label>Courses (one per line · optional link after a |)</label><textarea id="plCourses" rows="4" style="width:100%" placeholder="Celebration | https://celebrationgolf.com">${esc((p.courses||[]).map(c=>typeof c==='string'?c:(c.url?c.name+' | '+c.url:c.name)).join('\n'))}</textarea></div>
+    <div class="field"><label>Resort / main website (optional)</label><input id="plUrl" value="${esc(p.url||'')}" placeholder="https://"/></div>
+    <div class="field"><label>Accommodation link (optional)</label><input id="plLodgeUrl" value="${esc(p.lodgingUrl||'')}" placeholder="https://"/></div>
+    <div class="field"><label>Map: Google Maps link or search text (optional)</label><input id="plMap" value="${esc(p.map||'')}" placeholder="e.g. Reunion Resort, Kissimmee, FL"/></div>
+    <div class="field"><label>Other links (one per line: Label | https://…)</label><textarea id="plLinks" rows="3" style="width:100%" placeholder="Rate sheet | https://…">${esc((p.links||[]).map(l=>(l.label||'Link')+' | '+l.url).join('\n'))}</textarea></div>
     <div class="field"><label>Notes (optional)</label><input id="plNotes" value="${esc(p.notes||'')}"/></div>
     <button class="btn gold" onclick="savePlace('${id||''}')">Save</button>
     ${id?`<button class="btn ghost" style="margin-top:8px;color:var(--red)" onclick="delPlace('${id}')">Delete this place</button>`:''}
@@ -2298,7 +2316,10 @@ function savePlace(id){
   const location=$('#plLoc').value.trim(), lodging=$('#plLodge').value.trim();
   if(!location && !lodging) return;
   const pr=$('#plPrice').value, rec={ location, lodging, price:pr===''?null:Number(pr), rounds:Number($('#plRounds').value)||0,
-    courses:$('#plCourses').value.split('\n').map(s=>s.trim()).filter(Boolean), url:$('#plUrl').value.trim(), notes:$('#plNotes').value.trim() };
+    courses:$('#plCourses').value.split('\n').map(s=>s.trim()).filter(Boolean).map(l=>{ const i=l.indexOf('|'); if(i<0) return l; const name=l.slice(0,i).trim(), url=planSafeUrl(l.slice(i+1)); return url?{name,url}:name; }),
+    url:planSafeUrl($('#plUrl').value), lodgingUrl:planSafeUrl($('#plLodgeUrl').value), map:$('#plMap').value.trim(),
+    links:$('#plLinks').value.split('\n').map(s=>s.trim()).filter(Boolean).map(l=>{ const i=l.indexOf('|'); const url=planSafeUrl(i<0?l:l.slice(i+1)); return url?{label:i<0?'Link':(l.slice(0,i).trim()||'Link'),url}:null; }).filter(Boolean),
+    notes:$('#plNotes').value.trim() };
   const list=[...State.plan.places];
   if(id){ const i=list.findIndex(x=>x.id===id); if(i>=0) list[i]={...list[i],...rec}; }
   else list.push({id:'pl'+Date.now().toString(36),...rec});
