@@ -77,6 +77,29 @@ input,select{font-family:inherit;font-size:16px}
 .yp-row .tag{float:right;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.1);margin-top:4px}
 .yp-row .tag.cur{background:var(--gold);color:var(--ink)}
 #statsHost{display:none;position:fixed;inset:0;z-index:90;background:var(--ink);color:var(--light);overflow-y:auto;-webkit-overflow-scrolling:touch}
+
+.pl-card .pl-top{display:flex;gap:12px;justify-content:space-between;align-items:flex-start}
+.pl-price{font-family:'Oswald';font-size:24px;font-weight:700;line-height:1;text-align:right;white-space:nowrap}.pl-price small{display:block;font-family:inherit;font-size:10px;font-weight:600;color:var(--text-dim);letter-spacing:.06em;text-transform:uppercase;margin-top:3px}
+.pl-courses{display:flex;flex-direction:column;gap:5px;margin-top:10px}
+.pl-courses span{font-size:13.5px;display:flex;align-items:center;gap:8px}.pl-courses i{font-style:normal;width:20px;height:20px;border-radius:50%;background:var(--paper2);border:1px solid var(--line);display:grid;place-items:center;font-size:11px;font-weight:700;flex:none}
+.pl-vote{display:flex;gap:10px;margin-top:12px}
+.pv{flex:1;padding:11px 0;border-radius:12px;background:var(--paper2);border:2px solid var(--line);font-size:16px;font-weight:700;color:var(--text)}
+.pv.on.up{background:rgba(46,125,83,.16);border-color:var(--green)}.pv.on.dn{background:rgba(192,71,43,.14);border-color:var(--red)}
+.pl-who{font-size:12.5px;color:var(--text-dim);margin-top:9px;line-height:1.55}
+.pl-st{display:flex;align-items:center;gap:9px;padding:6px 0;border-bottom:1px solid var(--line)}.pl-st:last-of-type{border-bottom:none}
+.pl-rk{font-family:'Oswald';font-weight:700;color:var(--text-dim);width:16px;text-align:center}.pl-nm{flex:1;min-width:0;font-weight:600}.pl-nm small{font-weight:400;color:var(--text-dim);font-size:11.5px;margin-left:4px}
+.pl-st b.pos{color:var(--green)}.pl-st b.neg{color:var(--red)}
+.pc-title{font-family:'Oswald';font-size:17px;letter-spacing:.05em;text-transform:uppercase;margin:2px 0 8px}
+.pc-grid{display:grid;grid-template-columns:repeat(7,1fr) 52px;gap:4px}
+.pc-h{font-size:10px;font-weight:700;color:var(--text-dim);text-align:center;letter-spacing:.06em}.pc-h.on{color:#8a6410}
+.pc-d{height:44px;border-radius:9px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:13px}
+.pc-d.x{visibility:hidden}.pc-d.dim{color:var(--text-dim);opacity:.45}
+.pc-d.tap{background:var(--paper2);border:1.5px solid var(--line);color:var(--text)}.pc-d.tap b{font-size:14px;line-height:1.1}.pc-d.tap small{font-size:9.5px;line-height:1;color:var(--text-dim);min-height:10px}
+.pc-d.tap.on{background:var(--green);border-color:var(--green);color:#fff}.pc-d.tap.on small{color:rgba(255,255,255,.85)}
+.pc-t{height:44px;border-radius:9px;border:1.5px solid var(--line);background:linear-gradient(to top,rgba(46,125,83,.35) var(--f),transparent var(--f)),var(--paper2);display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--text)}.pc-t b{font-size:15px;line-height:1.1}.pc-t small{font-size:9.5px;color:var(--text-dim)}
+.pc-best{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}.pc-best span{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.06em}
+.pc-best button{padding:6px 10px;border-radius:999px;background:rgba(46,125,83,.14);border:1px solid var(--green);font-size:12px;font-weight:700;color:var(--text)}
+.pc-months{margin-bottom:8px}
 #statsHost .card{color:var(--text)}
 #statsHost .st-in{max-width:720px;margin:0 auto;padding:max(14px,env(safe-area-inset-top)) 14px 48px}
 .st-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
@@ -1623,6 +1646,11 @@ async function loadAll(){
     cfg.settings.blankStart=true; await Store.set('config',cfg);
   }
   if(reconcileTrip()){ await Store.set('config',State.config); }
+  if(!State.archive && cfg.settings?.yearSeed && cfg.settings.planning===undefined){   // a new year starts in planning mode, seeded with the shortlist
+    cfg.settings.planning=true; await Store.set('config',cfg);
+    if(!(await Store.get('plan:places'))) await Store.set('plan:places',{list:PLAN_SEED.map((p,i)=>({id:'pl'+i,...p})),updatedAt:Date.now()});
+  }
+  try{ await loadPlan(); }catch(e){}
   State.avatars={};
   const avs=await Store.list('avatar:');
   Object.entries(avs).forEach(([k,v])=>{ State.avatars[k.split(':')[1]]=v?.emoji; });
@@ -1693,6 +1721,9 @@ async function refresh(){
     const cfgKey=State.sandbox?'sandbox-config':'config';
     const cfgProtected = recentConfigWrite[cfgKey] && Date.now()<recentConfigWrite[cfgKey];
     if(!cfgProtected){ const cfg=await Store.get(cfgKey); if(cfg){ State.config=cfg; applyArchive(); } }
+    { const was=State._planWas; State._planWas=planOn();
+      if(!State.sandbox && (planOn() || State.view==='plan')){ try{ const ch=await loadPlan(); if(ch && State.view==='plan') render(false); }catch(e){} }
+      if(was!==undefined && was!==planOn()) render(true); }
     if(Date.now()-(State._regT||0)>30000){   // every 30s: has a newer year been started?
       State._regT=Date.now();
       const reg=await Store.rawGet('years');
@@ -2053,6 +2084,246 @@ async function openStats(){
 function closeStats(){
   const host=document.getElementById('statsHost'); if(host){ host.style.display='none'; host.innerHTML=''; }
   try{ document.body.style.overflow=''; }catch(e){}
+}
+
+/* ============================================================
+   PLANNING — vote on where to go, mark which weekends you can do.
+   Lives inside a new year (settings.planning) until the commissioner says planning's done; then it tucks into the More tab.
+   Data (per year): plan:places {list} · plan:cfg {from,to} · plan:vote:<pid> {v:{placeId:1|-1}} · plan:avail:<pid> {d:{'YYYY-MM-DD':1}}
+   ============================================================ */
+State.plan={places:[],cfg:{},votes:{},avail:{}};
+State.planMonth=null;
+const planOn=()=>!!State.config?.settings?.planning;
+const planTouched={};   // key -> ts of our own recent write, so a lagging poll can't undo a tap
+const PLAN_SEED=[
+  {location:'Orlando',lodging:'Windsor Island (10 bedroom house)',price:829,rounds:3,courses:['Celebration','International Course (Omni Resort)','Crooked Cat (Orange County National)']},
+  {location:'Orlando',lodging:'Reunion Resort · 3 bed villas',price:929,rounds:3,courses:['Palmer Course (Reunion)','Watson Course (Reunion)','Nicklaus Course (Reunion)']},
+  {location:'Streamsong',lodging:'Hotel room · 2 bed queen',price:2197.5,rounds:3,courses:['Red','Blue','Bone Valley']},
+  {location:'Bay Hill',lodging:'Hotel room · 2 bed queen',price:1699,rounds:3,courses:['Shingle Creek','Waldorf Astoria','Bay Hill']},
+  {location:'Talamore',lodging:'Talamore Resort · 3 and 2 bed villas',price:1157,rounds:3,courses:['Mid Pines','Pine Needles','Mid South'],notes:'Price based on 2026 golf rates.'},
+];
+const planMoney=(n)=>{ const v=Number(n), f=Number.isInteger(v)?0:2; return '$'+v.toLocaleString(undefined,{minimumFractionDigits:f,maximumFractionDigits:2}); };
+async function loadPlan(){
+  const all=await Store.list('plan:'), P={places:[],cfg:{},votes:{},avail:{}}, now=Date.now();
+  Object.entries(all).forEach(([k,v])=>{
+    if(k==='plan:places') P.places=Array.isArray(v?.list)?v.list:[];
+    else if(k==='plan:cfg') P.cfg=v||{};
+    else if(k.startsWith('plan:vote:')) P.votes[k.slice(10)]=v?.v||{};
+    else if(k.startsWith('plan:avail:')) P.avail[k.slice(11)]=v?.d||{};
+  });
+  Object.entries(planTouched).forEach(([k,t])=>{   // keep our own very recent writes
+    if(now-t>90000){ delete planTouched[k]; return; }
+    if(k.startsWith('plan:vote:')) P.votes[k.slice(10)]=State.plan.votes[k.slice(10)]||{};
+    else if(k.startsWith('plan:avail:')) P.avail[k.slice(11)]=State.plan.avail[k.slice(11)]||{};
+    else if(k==='plan:places') P.places=State.plan.places;
+    else if(k==='plan:cfg') P.cfg=State.plan.cfg;
+  });
+  const changed=JSON.stringify(State.plan)!==JSON.stringify(P); State.plan=P; return changed;
+}
+function planSave(key,value){
+  if(State.archive && !State.adminAuthed) return;
+  planTouched[key]=Date.now(); value.updatedAt=Date.now(); Store.set(key,value);
+}
+/* ---------- dates ---------- */
+const planISO=(d)=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+const planDate=(s)=>{ const [y,m,d]=String(s).split('-').map(Number); return new Date(y,(m||1)-1,d||1); };
+const PLAN_MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function planRange(){ const c=State.plan.cfg||{}; return {from:c.from||`${State.year}-03-01`, to:c.to||`${State.year}-11-30`}; }
+function planMonths(){
+  const {from,to}=planRange(), a=planDate(from), b=planDate(to), out=[];
+  let d=new Date(a.getFullYear(),a.getMonth(),1);
+  while(d<=b && out.length<24){ out.push({y:d.getFullYear(),m:d.getMonth()}); d=new Date(d.getFullYear(),d.getMonth()+1,1); }
+  return out;
+}
+const planMonday=(d)=>{ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); x.setDate(x.getDate()-((x.getDay()+6)%7)); return x; };
+const planAddDays=(d,n)=>{ const x=new Date(d.getFullYear(),d.getMonth(),d.getDate()); x.setDate(x.getDate()+n); return x; };
+// who can do Fri–Sun of the week starting this Monday ("full"), who marked some of Thu–Sun ("part")
+function planWeek(mon){
+  const players=State.config.players||[], thu=planISO(planAddDays(mon,3)), fri=planISO(planAddDays(mon,4)), sat=planISO(planAddDays(mon,5)), sun=planISO(planAddDays(mon,6));
+  const full=[], part=[];
+  players.forEach(p=>{ const a=State.plan.avail[p.id]||{}; if(a[fri]&&a[sat]&&a[sun]) full.push(p.id); else if(a[thu]||a[fri]||a[sat]||a[sun]) part.push(p.id); });
+  return {full,part};
+}
+function planBestWeekends(){
+  const {from,to}=planRange(), out=[]; let m=planMonday(planDate(from)); const end=planDate(to);
+  while(m<=end && out.length<200){ const w=planWeek(m); if(w.full.length) out.push({mon:new Date(m),n:w.full.length}); m=planAddDays(m,7); }
+  return out.sort((a,b)=>b.n-a.n||a.mon-b.mon).slice(0,4);
+}
+const planWeekendLabel=(mon)=>{ const f=planAddDays(mon,4), s=planAddDays(mon,6); return f.getMonth()===s.getMonth() ? `${PLAN_MON[f.getMonth()]} ${f.getDate()}–${s.getDate()}` : `${PLAN_MON[f.getMonth()]} ${f.getDate()}–${PLAN_MON[s.getMonth()]} ${s.getDate()}`; };
+/* ---------- actions ---------- */
+function planNeedMe(){ if(State.me && player(State.me)) return false; openIdentity(); return true; }
+function planVote(pid,v){
+  if(planNeedMe()) return;
+  const me=State.me, mine={...(State.plan.votes[me]||{})};
+  if(mine[pid]===v) delete mine[pid]; else mine[pid]=v;
+  State.plan.votes[me]=mine; planSave('plan:vote:'+me,{v:mine}); render(false);
+}
+function planDay(iso){
+  if(planNeedMe()) return;
+  const me=State.me, d={...(State.plan.avail[me]||{})};
+  if(d[iso]) delete d[iso]; else d[iso]=1;
+  State.plan.avail[me]=d; planSave('plan:avail:'+me,{d}); render(false);
+}
+function planSetMonth(i){ State.planMonth=i; render(false); }
+function planGoMonth(y,m){ const i=planMonths().findIndex(x=>x.y===y&&x.m===m); if(i>=0) planSetMonth(i); }
+function planWeekWho(isoMon){
+  const w=planWeek(planDate(isoMon)), nm=(ids)=>ids.map(id=>esc(displayName(id))).join(', ')||'—';
+  const none=(State.config.players||[]).filter(p=>!w.full.includes(p.id)&&!w.part.includes(p.id)).map(p=>p.id);
+  showModal(`<div class="modal-h"><h2>${planWeekendLabel(planDate(isoMon))}</h2><p class="muted" style="margin:4px 0 0">Friday–Sunday availability</p></div>
+    <div class="modal-b">
+      <div class="eyebrow">✅ Can do the whole weekend (${w.full.length})</div><p style="margin:0 0 12px">${nm(w.full)}</p>
+      <div class="eyebrow">🟡 Some days (${w.part.length})</div><p style="margin:0 0 12px">${nm(w.part)}</p>
+      <div class="eyebrow">⬜ Nothing marked (${none.length})</div><p style="margin:0 0 12px">${nm(none)}</p>
+      <button class="btn ghost" onclick="closeModal()">Close</button></div>`);
+}
+/* ---------- the Plan page ---------- */
+function viewPlan(){
+  const P=State.plan, players=State.config.players||[], me=State.me, mp=me&&player(me);
+  const back=planOn()?'':`<button class="btn ghost sm" style="width:auto;margin-bottom:10px" onclick="go('more')">‹ Back to More</button>`;
+  const meLine=mp ? `<div class="muted" style="margin-top:6px">Voting as <b>${esc(mp.name)}</b></div>` : `<button class="btn gold" style="margin-top:10px" onclick="openIdentity()">Sign in to vote</button>`;
+  const intro=`${back}<div class="card"><div class="eyebrow">${State.year} planning</div><h3 style="font-size:19px;text-transform:uppercase;margin-bottom:6px">Where &amp; when?</h3>
+    <p class="muted">Vote 👍 or 👎 on the places, then tap every Thursday–Sunday you could do. The commissioner locks in the plan from the results.</p>${meLine}</div>`;
+  // ---- places
+  const net=(p)=>{ let up=0,dn=0; players.forEach(x=>{ const v=(P.votes[x.id]||{})[p.id]; if(v===1)up++; else if(v===-1)dn++; }); return {up,dn,n:up-dn}; };
+  const voted=players.filter(x=>Object.keys(P.votes[x.id]||{}).length).length;
+  let places;
+  if(!P.places.length){
+    places=`<div class="card"><div class="empty"><div class="big">🗺️</div><b>No places yet</b><p class="muted" style="margin-top:6px">The commissioner will add the options soon.</p></div></div>`;
+  } else {
+    const ranked=P.places.map((p,i)=>({p,i,...net(p)})).sort((a,b)=>b.n-a.n||a.i-b.i);
+    const anyVotes=ranked.some(r=>r.up||r.dn);
+    const standings=anyVotes?`<div class="card tight"><div class="eyebrow">Standings</div>${ranked.map((r,i)=>`<div class="pl-st"><span class="pl-rk">${i+1}</span><span class="pl-nm">${esc(r.p.location)}${r.p.lodging?` <small>${esc(r.p.lodging)}</small>`:''}</span><b class="${r.n>0?'pos':r.n<0?'neg':''}">${r.n>0?'+':''}${r.n}</b></div>`).join('')}
+      <div class="muted" style="font-size:11px;margin-top:6px">${voted} of ${players.length} have voted${voted<players.length?' · waiting on '+players.filter(x=>!Object.keys(P.votes[x.id]||{}).length).map(x=>esc(displayName(x.id))).join(', '):''}</div></div>`:'';
+    places=standings+P.places.map(p=>{
+      const up=[],dn=[]; players.forEach(x=>{ const v=(P.votes[x.id]||{})[p.id]; if(v===1)up.push(x.id); else if(v===-1)dn.push(x.id); });
+      const mine=me?(P.votes[me]||{})[p.id]:0, names=(ids)=>ids.map(id=>esc(displayName(id))).join(', ');
+      return `<div class="card pl-card">
+        <div class="pl-top"><div style="min-width:0"><div class="eyebrow" style="margin-bottom:2px">${esc(p.location||'')}${p.rounds?` · ${p.rounds} rounds`:''}</div><h3 style="font-size:18px;margin:0">${esc(p.lodging||p.location||'')}</h3></div>
+          ${p.price!=null&&p.price!==''?`<div class="pl-price">${planMoney(p.price)}<small>per person</small></div>`:''}</div>
+        ${(p.courses||[]).length?`<div class="pl-courses">${p.courses.map((c,i)=>`<span><i>${i+1}</i>${esc(c)}</span>`).join('')}</div>`:''}
+        ${p.notes?`<div class="muted" style="margin-top:8px">${esc(p.notes)}</div>`:''}
+        ${p.url?`<div style="margin-top:6px"><a href="${esc(p.url)}" target="_blank" rel="noopener" style="color:var(--blue);font-weight:600;font-size:13px">Details ↗</a></div>`:''}
+        <div class="pl-vote"><button class="pv ${mine===1?'on up':''}" onclick="planVote('${p.id}',1)">👍 ${up.length}</button><button class="pv ${mine===-1?'on dn':''}" onclick="planVote('${p.id}',-1)">👎 ${dn.length}</button></div>
+        ${(up.length||dn.length)?`<div class="pl-who">${up.length?`<div>👍 ${names(up)}</div>`:''}${dn.length?`<div>👎 ${names(dn)}</div>`:''}</div>`:''}
+      </div>`;
+    }).join('');
+  }
+  return intro+`<div class="eyebrow" style="color:var(--gold);margin:6px 2px 8px">Where</div>${places}`+planCalendarHTML();
+}
+function planCalendarHTML(){
+  const months=planMonths(), players=State.config.players||[], me=State.me, N=players.length;
+  if(!months.length) return '';
+  if(State.planMonth==null || State.planMonth>=months.length){
+    const now=new Date(), i=months.findIndex(x=>x.y===now.getFullYear()&&x.m===now.getMonth());
+    State.planMonth=i>=0?i:0;
+  }
+  const cur=months[State.planMonth], {from,to}=planRange(), mine=me?(State.plan.avail[me]||{}):{};
+  const first=new Date(cur.y,cur.m,1), last=new Date(cur.y,cur.m+1,0);
+  const heads=['M','T','W','T','F','S','S'].map((d,i)=>`<div class="pc-h${i>=3?' on':''}">${d}</div>`).join('')+`<div class="pc-h">Free</div>`;
+  let rows='', mon=planMonday(first);
+  while(mon<=last){
+    let cells='', anyTap=false;
+    for(let i=0;i<7;i++){
+      const d=planAddDays(mon,i), iso=planISO(d);
+      if(d.getMonth()!==cur.m){ cells+=`<div class="pc-d x"></div>`; continue; }
+      const inRange=iso>=from && iso<=to;
+      if(i<3 || !inRange){ cells+=`<div class="pc-d dim">${d.getDate()}</div>`; continue; }
+      anyTap=true;
+      const n=players.filter(p=>(State.plan.avail[p.id]||{})[iso]).length;
+      cells+=`<button class="pc-d tap${mine[iso]?' on':''}" onclick="planDay('${iso}')"><b>${d.getDate()}</b><small>${n||''}</small></button>`;
+    }
+    const w=planWeek(mon), frac=N?w.full.length/N:0;
+    const tally=anyTap?`<button class="pc-t" style="--f:${Math.round(frac*100)}%" onclick="planWeekWho('${planISO(mon)}')"><b>${w.full.length}</b><small>/${N}</small></button>`:`<div></div>`;
+    rows+=cells+tally;
+    mon=planAddDays(mon,7);
+  }
+  const best=planBestWeekends();
+  const chips=months.map((x,i)=>`<button class="${i===State.planMonth?'on':''}" onclick="planSetMonth(${i})">${PLAN_MON[x.m]}${months.length>12||x.y!==State.year?" '"+String(x.y).slice(2):''}</button>`).join('');
+  return `<div class="eyebrow" style="color:var(--gold);margin:18px 2px 8px">When</div>
+    <div class="card"><div class="eyebrow">Which weekends can you do?</div>
+      <div class="muted" style="margin-bottom:10px">Tap each day you're free, Thursday through Sunday. Small numbers show how many people are free that day; <b>Free</b> counts who can do the whole Friday–Sunday (tap it for names).</div>
+      ${best.length?`<div class="pc-best"><span>Best so far</span>${best.map(b=>`<button onclick="planGoMonth(${planAddDays(b.mon,4).getFullYear()},${planAddDays(b.mon,4).getMonth()})">${planWeekendLabel(b.mon)} · ${b.n}/${N}</button>`).join('')}</div>`:''}
+      <div class="st-tabs light pc-months">${chips}</div>
+      <div class="pc-title">${['January','February','March','April','May','June','July','August','September','October','November','December'][cur.m]} ${cur.y}</div>
+      <div class="pc-grid">${heads}${rows}</div>
+      ${me?'':`<button class="btn gold" style="margin-top:12px" onclick="openIdentity()">Sign in to mark your dates</button>`}
+    </div>`;
+}
+/* ---------- admin ---------- */
+function renderPlanAdmin(){
+  if(!State.adminAuthed) return;
+  const on=planOn(), P=State.plan, {from,to}=planRange();
+  const rows=P.places.map(p=>`<div class="roster-item"><div class="info" style="flex:1;min-width:0"><b>${esc(p.location||'')}</b><span>${esc(p.lodging||'')}${p.price!=null&&p.price!==''?' · '+planMoney(p.price):''}</span></div>
+    <button class="btn ghost sm" style="width:auto" onclick="editPlace('${p.id}')">Edit</button></div>`).join('');
+  showModal(`<div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>🗺️ Planning</h2><button class="btn sm ghost" onclick="renderAdmin()">Back</button></div>
+    <div class="modal-b">
+      <div class="banner" style="margin-bottom:12px">Planning mode is <b>${on?'ON':'off'}</b>. ${on?'Everyone sees Plan · Rounds · Roster · More; Leaderboard and Enter Score are hidden.':'The normal tabs are showing; the plan lives on the More tab.'}</div>
+      <button class="btn ${on?'gold':''}" style="margin-bottom:16px" onclick="setPlanning(${!on})">${on?"✅ Planning's done — start the trip":'Turn planning mode on'}</button>
+      <div class="eyebrow">Places</div>${rows||'<p class="muted">None yet.</p>'}
+      <button class="btn ghost sm" style="width:100%;margin:8px 0 16px" onclick="editPlace('')">+ Add a place</button>
+      <div class="eyebrow">Dates people can pick from</div>
+      <div class="two"><div class="field"><label>From</label><input id="plFrom" type="date" value="${esc(from)}" style="min-width:0;width:100%"/></div><div class="field"><label>To</label><input id="plTo" type="date" value="${esc(to)}" style="min-width:0;width:100%"/></div></div>
+      <button class="btn ghost sm" style="width:100%;margin-bottom:16px" onclick="savePlanRange()">Save dates</button>
+      <div class="eyebrow">Who's voting</div>
+      <p class="muted" style="margin:0 0 6px">Only people on the roster can sign in and vote.</p>
+      <button class="btn ghost sm" style="width:100%" onclick="openInviteCrew()">👥 Invite last year's crew…</button>
+    </div>`);
+}
+async function setPlanning(on){
+  if(!State.adminAuthed) return;
+  State.config.settings.planning=!!on; await saveConfig();
+  State.view=on?'plan':'board'; closeModal(); render(true);
+}
+function savePlanRange(){
+  const from=$('#plFrom').value, to=$('#plTo').value;
+  if(!from||!to||from>to){ alert('Pick a start date before the end date.'); return; }
+  State.plan.cfg={from,to}; planSave('plan:cfg',{from,to}); State.planMonth=null; renderPlanAdmin();
+}
+function editPlace(id){
+  if(!State.adminAuthed) return;
+  const p=P_find(id)||{};
+  showModal(`<div class="modal-h"><h2>${id?'Edit place':'Add a place'}</h2></div><div class="modal-b">
+    <div class="field"><label>Location</label><input id="plLoc" value="${esc(p.location||'')}" placeholder="e.g. Orlando"/></div>
+    <div class="field"><label>Lodging</label><input id="plLodge" value="${esc(p.lodging||'')}" placeholder="e.g. Reunion Resort · 3 bed villas"/></div>
+    <div class="two"><div class="field"><label>Price per person ($)</label><input id="plPrice" type="number" step="0.01" value="${p.price??''}"/></div><div class="field"><label>Rounds</label><input id="plRounds" type="number" value="${p.rounds??3}"/></div></div>
+    <div class="field"><label>Courses (one per line)</label><textarea id="plCourses" rows="4" style="width:100%">${esc((p.courses||[]).join('\n'))}</textarea></div>
+    <div class="field"><label>Link (optional)</label><input id="plUrl" value="${esc(p.url||'')}" placeholder="https://"/></div>
+    <div class="field"><label>Notes (optional)</label><input id="plNotes" value="${esc(p.notes||'')}"/></div>
+    <button class="btn gold" onclick="savePlace('${id||''}')">Save</button>
+    ${id?`<button class="btn ghost" style="margin-top:8px;color:var(--red)" onclick="delPlace('${id}')">Delete this place</button>`:''}
+    <button class="btn ghost" style="margin-top:8px" onclick="renderPlanAdmin()">Cancel</button></div>`);
+}
+const P_find=(id)=>State.plan.places.find(x=>x.id===id);
+function savePlace(id){
+  const location=$('#plLoc').value.trim(), lodging=$('#plLodge').value.trim();
+  if(!location && !lodging) return;
+  const pr=$('#plPrice').value, rec={ location, lodging, price:pr===''?null:Number(pr), rounds:Number($('#plRounds').value)||0,
+    courses:$('#plCourses').value.split('\n').map(s=>s.trim()).filter(Boolean), url:$('#plUrl').value.trim(), notes:$('#plNotes').value.trim() };
+  const list=[...State.plan.places];
+  if(id){ const i=list.findIndex(x=>x.id===id); if(i>=0) list[i]={...list[i],...rec}; }
+  else list.push({id:'pl'+Date.now().toString(36),...rec});
+  State.plan.places=list; planSave('plan:places',{list}); renderPlanAdmin();
+}
+function delPlace(id){
+  const list=State.plan.places.filter(x=>x.id!==id); State.plan.places=list; planSave('plan:places',{list}); renderPlanAdmin();
+}
+async function openInviteCrew(){
+  if(!State.adminAuthed) return;
+  const prev=[...(State.registry?.years||[])].filter(y=>y.year<State.year).sort((a,b)=>b.year-a.year)[0];
+  if(!prev){ alert('There is no earlier year to copy from.'); return; }
+  const cfg=await Store.rawGet((prev.prefix||'')+'config');
+  const have=new Set((State.config.players||[]).map(p=>stKey(p.name)));
+  const list=((cfg&&cfg.players)||[]).filter(p=>p.name && !/guest/i.test(p.name) && !have.has(stKey(p.name)));
+  State._invite=list;
+  showModal(`<div class="modal-h"><h2>Invite ${prev.year}'s crew</h2><p class="muted" style="margin:4px 0 0">Adds names only — no teams or handicaps — so they can sign in and vote.</p></div><div class="modal-b">
+    ${list.length?list.map((p,i)=>`<label style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)"><input type="checkbox" class="inv" data-i="${i}" checked style="width:18px;height:18px"/>${esc(p.name)}</label>`).join(''):'<p class="muted">Everyone from last year is already on the roster.</p>'}
+    ${list.length?`<button class="btn gold" style="margin-top:12px" onclick="doInviteCrew()">Add selected</button>`:''}
+    <button class="btn ghost" style="margin-top:8px" onclick="renderPlanAdmin()">Back</button></div>`);
+}
+async function doInviteCrew(){
+  const pick=[...document.querySelectorAll('.inv')].filter(x=>x.checked).map(x=>State._invite[Number(x.dataset.i)]);
+  let n=0; pick.forEach(p=>{ State.config.players.push({id:'p'+(Date.now()+n++).toString(36),name:p.name,teamId:'',isCaptain:false,loyola:!!p.loyola,fantasy:!!p.fantasy,avatar:''}); });
+  await saveConfig(); renderPlanAdmin();
 }
 
 function updateArchiveBar(){
@@ -2500,19 +2771,23 @@ const NAV=[
   {id:'roster',label:'Roster', icon:'M16 7a4 4 0 11-8 0 4 4 0 018 0zM3 21a7 7 0 0114 0'},
   {id:'more',  label:'More', icon:'M5 12h.01M12 12h.01M19 12h.01'},
 ];
+const PLAN_NAV={id:'plan', label:'Plan', icon:'M12 21s-7-6.2-7-11a7 7 0 0114 0c0 4.8-7 11-7 11zM12 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z'};
+// while a new year is still being planned, Leaderboard and Enter Score are hidden and Plan comes first
+const navItems=()=> planOn() ? [PLAN_NAV, ...NAV.filter(n=>n.id!=='board'&&n.id!=='enter')] : NAV;
 function renderNav(){
-  $('#nav').innerHTML=NAV.map(n=>`<button class="${State.view===n.id?'on':''}" onclick="go('${n.id}')">
+  $('#nav').innerHTML=navItems().map(n=>`<button class="${State.view===n.id?'on':''}" onclick="go('${n.id}')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="${n.icon}"/></svg>${n.label}</button>`).join('');
 }
 const scrollerEl = ()=> document.getElementById('scroller');
 function go(view){ State.view=view; const sc=scrollerEl(); if(sc) sc.scrollTop=0; render(true); }
 
 function render(animate=false){
+  if(planOn() && (State.view==='board'||State.view==='enter')) State.view='plan';
   updateMeChip(); renderNav();
   const s=$('#screen');
   const sc=scrollerEl();
   const y = animate ? 0 : (sc?sc.scrollTop:0);    // keep place unless navigating
-  const map={board:viewBoard,enter:viewEnter,rounds:viewRounds,roster:viewRoster,more:viewMore};
+  const map={board:viewBoard,enter:viewEnter,rounds:viewRounds,roster:viewRoster,more:viewMore,plan:viewPlan};
   s.innerHTML=`<div class="view${animate?' anim':''}">${(map[State.view]||viewBoard)()}</div>`;
   if(State.view==='enter') wireEntry();
   startCountdownTimer();
@@ -3635,6 +3910,7 @@ function viewMore(){
     <div class="muted" style="margin-top:8px">${s.yearSeed?esc([s.tripDates||('Dates TBD · '+State.year),(State.config?.players?.length?State.config.players.length+' golfers':''),s.bookingRef?'Ref '+s.bookingRef:''].filter(Boolean).join(' · ')):'Oct 22–25, 2026 · 16 golfers'+(s.bookingRef?' · Ref '+esc(s.bookingRef):'')}</div>
     ${dinnersHTML(s)}
   </div>
+  ${(!planOn() && State.plan.places.length)?`<div class="card"><div class="eyebrow">Planning</div><h3 style="font-size:19px;text-transform:uppercase;margin-bottom:4px">Where &amp; when</h3><p class="muted" style="margin-bottom:12px">The places on the shortlist, who voted for what, and which weekends work.</p><button class="btn ghost" onclick="go('plan')">🗺️ Open the plan</button></div>`:''}
   ${vaultHTML()}
   <div class="card">
     <div class="eyebrow">Run the Trip</div>
@@ -4101,6 +4377,7 @@ function renderAdmin(){
         <button class="btn ghost sm" style="width:100%" onclick="seedSample()">Reload trip roster</button>
       </div>
       ${State.archive?'':`<button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="openNewYearModal()">📅 Start a new year…</button>`}
+      <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="renderPlanAdmin()">🗺️ Planning, places &amp; votes…</button>
       <button class="btn ghost sm" style="width:100%;margin-top:8px" onclick="renderSizesAdmin()">👕 Apparel sizes &amp; order summary</button>
 
       <div class="divider"></div>
