@@ -1338,7 +1338,7 @@ function matchStatusParts(res){
   if(res.override) return res.override==='half' ? {main:'Halved', sub:'set by admin'} : {main:'Won', sub:'set by admin'};
   if(res.played===0) return {main:'—'};
   const u=Math.abs(res.diff);
-  if(res.diff===0) return res.remaining===0 ? {main:'Halved'} : {main:'AS', sub:`thru ${res.played}`};
+  if(res.diff===0) return res.remaining===0 ? {main:'Halved', sub:'final'} : {main:'AS', sub:`thru ${res.played}`};
   if(res.final && res.remaining>0) return {main:`${u}&${res.remaining}`, sub:'final'};   // closed out
   if(res.remaining===0) return {main:`${u} UP`, sub:'final'};
   return {main:`${u} UP`, sub:`thru ${res.played}`};
