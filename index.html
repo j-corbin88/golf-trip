@@ -802,7 +802,7 @@ function shameStats(){
 const TRIP_ROSTER = [
   'Eric Noto','Andrew Smith','John Schmeer','Chris Hillis','Devin Velnoskey',
   'Andrew Eby','Jordan Corbin','Julian Maskeroni','Brett Mastropieri','Patrick Budd',
-  'Justin McGrath','Pat Greenwell','Nick Hammond','Bob Mayo','Joe Fucigna','Guest 16 (TBD)'
+  'Justin McGrath','Pat Greenwell','Nick Hammond','Bob Mayo','Joe Fucigna','Matt Reichenbach'
 ];
 // Handicaps from the commissioner (by roster id). Applied only where a player
 // has no handicap yet; a player's own self-entered index always wins.
@@ -4709,11 +4709,20 @@ async function savePlayer(pid){
 async function delPlayer(pid){ State.config.players=State.config.players.filter(p=>p.id!==pid); saveConfig(); renderAdmin(); }
 
 async function seedSample(){
+  const existing=Object.fromEntries((State.config.players||[]).map(p=>[stKey(p.name),p]));
+  if(State.config.settings?.yearSeed){
+    // a new year: bring back LAST YEAR'S actual roster (not the original hard-coded list), adding only the people who are missing
+    const prev=[...(State.registry?.years||[])].filter(y=>y.year<State.year).sort((a,b)=>b.year-a.year)[0];
+    const pcfg=prev&&await Store.rawGet((prev.prefix||'')+'config');
+    const names=((pcfg&&pcfg.players)||[]).map(p=>p.name).filter(n=>n && !/guest/i.test(n) && !existing[stKey(n)]);
+    let n=0; const prevByName=Object.fromEntries(((pcfg&&pcfg.players)||[]).map(p=>[stKey(p.name),p]));
+    names.forEach(name=>{ const o=prevByName[stKey(name)]||{}; State.config.players.push({id:'p'+(Date.now()+n++).toString(36),name,teamId:'',isCaptain:false,avatar:'',loyola:!!o.loyola,fantasy:!!o.fantasy}); });
+    await saveConfig(); renderAdmin(); return;
+  }
   // (Re)load the real trip roster from the itinerary, keeping any team/hcp/captain
   // edits already made to matching names so this is safe to re-run.
-  const existing=Object.fromEntries((State.config.players||[]).map(p=>[p.name,p]));
   State.config.players=TRIP_ROSTER.map((name,i)=>{
-    const e=existing[name]||{};
+    const e=existing[stKey(name)]||{};
     return { id:e.id||('p'+i), name, hcp:e.hcp??null, teamId:e.teamId||'', isCaptain:e.isCaptain||false, avatar:e.avatar||'', loyola:e.loyola||false, fantasy:e.fantasy||false };
   });
   await saveConfig(); renderAdmin();
