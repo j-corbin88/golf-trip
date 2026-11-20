@@ -1008,7 +1008,8 @@ const State = {
   reactions:{}, // voterId -> { matchKey: emoji } (from react:* blobs)
   titles:{},    // playerId -> superlative text (from title:* blobs)
   pins:{},      // playerId -> 4-digit PIN, if that player has locked their name (from pin:* blobs)
-  sizes:{},     // playerId -> {tshirt, polo, quarterzip} apparel sizes (from sizes:* blobs)
+  sizes:{},     // playerId -> {tshirt, polo, quarterzip, confirmed} apparel sizes (from sizes:* blobs)
+  prevSizes:{}, // normalized name -> last year's sizes {tshirt,polo,quarterzip,from}; shown as UNCONFIRMED defaults
   cards:{},     // 'card:round:side' -> {holes,enteredBy,updatedAt}
   me:null,      // playerId
   view:'board',
@@ -1673,6 +1674,7 @@ async function loadAll(){
   State.sizes={};
   const sz=await Store.list('sizes:');
   Object.entries(sz).forEach(([k,v])=>{ if(v) State.sizes[k.split(':')[1]]=v; });
+  loadPrevSizes();
   State.cards=await Store.list('card:');
   if(migrateTwelvePointDays()){ await saveConfig(); }
   State.me=Device.get('me');
@@ -3826,32 +3828,66 @@ function viewRoster(){
   const lowNote=lowP?`<div class="muted" style="font-size:11px;margin:-4px 2px 12px">Gold number = strokes given vs. ${esc(lowP.name.split(' ')[0])}'s ${fmtH(hcpOf(lowP.id))} — the field's low handicap.</div>`:'';
   return `${voteCard}${sizesCard}<div class="eyebrow">The Field · ${players.length} players</div>${lowNote}${blocks}${un}`;
 }
+// Last year's sizes are the default for returning players, but flagged unconfirmed until the player (or admin) confirms or edits them.
+async function loadPrevSizes(){
+  const prev=[...(State.registry?.years||[])].filter(y=>y.year<State.year).sort((a,b)=>b.year-a.year)[0];
+  if(!prev){ State.prevSizes={}; return; }
+  if(State._prevSzYear===prev.year) return;
+  State._prevSzYear=prev.year;
+  try{
+    const pre=prev.prefix||'';
+    const cfg=await Store.rawGet(pre+'config');
+    const raw=await Store.rawList(pre+'sizes:');
+    const byId={}; Object.entries(raw||{}).forEach(([k,v])=>{ if(v) byId[k.slice(pre.length).split(':')[1]]=v; });
+    const out={};
+    ((cfg&&cfg.players)||[]).forEach(p=>{ const v=byId[p.id]; if(p.name&&v&&(v.tshirt||v.polo||v.quarterzip)) out[stKey(p.name)]={tshirt:v.tshirt||'',polo:v.polo||'',quarterzip:v.quarterzip||'',from:prev.year}; });
+    State.prevSizes=out;
+    if(Object.keys(out).length && !document.querySelector('.modal-b')) render();
+  }catch(e){ State._prevSzYear=0; }
+}
+function sizeOf(pid){
+  const own=State.sizes[pid];
+  if(own&&(own.tshirt||own.polo||own.quarterzip)) return {tshirt:own.tshirt||'',polo:own.polo||'',quarterzip:own.quarterzip||'',confirmed:own.confirmed!==false,carried:false};
+  const p=player(pid), c=p&&State.prevSizes&&State.prevSizes[stKey(p.name)];
+  if(c) return {tshirt:c.tshirt,polo:c.polo,quarterzip:c.quarterzip,confirmed:false,carried:true,from:c.from};
+  return {tshirt:'',polo:'',quarterzip:'',confirmed:false,carried:false};
+}
 function mySizesLine(pid){
-  const sz=State.sizes[pid]||{};
+  const sz=sizeOf(pid);
   const has=sz.tshirt||sz.polo||sz.quarterzip;
-  return has
-    ? `<p class="muted" style="margin-bottom:10px">T-shirt <b style="color:var(--text)">${esc(sz.tshirt||'—')}</b> · Polo <b style="color:var(--text)">${esc(sz.polo||'—')}</b> · Quarter-zip <b style="color:var(--text)">${esc(sz.quarterzip||'—')}</b></p><button class="btn ghost sm" onclick="renderSizesEditor('${pid}')">Edit my sizes</button>`
-    : `<p class="muted" style="margin-bottom:10px">Not set yet.</p><button class="btn gold" onclick="renderSizesEditor('${pid}')">Set my sizes</button>`;
+  if(!has) return `<p class="muted" style="margin-bottom:10px">Not set yet.</p><button class="btn gold" onclick="renderSizesEditor('${pid}')">Set my sizes</button>`;
+  const line=`<p class="muted" style="margin-bottom:8px">T-shirt <b style="color:var(--text)">${esc(sz.tshirt||'—')}</b> · Polo <b style="color:var(--text)">${esc(sz.polo||'—')}</b> · Quarter-zip <b style="color:var(--text)">${esc(sz.quarterzip||'—')}</b></p>`;
+  return sz.carried
+    ? `${line}<p style="margin-bottom:10px;font-size:12.5px;font-weight:600;color:#b45309">⚠ Carried over from ${sz.from} — not confirmed yet</p><div style="display:flex;gap:8px"><button class="btn gold sm" onclick="confirmSizes('${pid}')">These are right</button><button class="btn ghost sm" onclick="renderSizesEditor('${pid}')">Change</button></div>`
+    : `${line}<p style="margin-bottom:10px;font-size:12.5px;font-weight:600;color:#2e7d32">✓ Confirmed</p><button class="btn ghost sm" onclick="renderSizesEditor('${pid}')">Edit my sizes</button>`;
 }
 const APPAREL_SIZES=['XS','S','M','L','XL','XXL','XXXL'];
 function renderSizesEditor(pid){
-  const sz=State.sizes[pid]||{};
+  const sz=sizeOf(pid);
   const opts=(cur)=>['<option value="">—</option>'].concat(APPAREL_SIZES.map(s=>`<option value="${s}" ${cur===s?'selected':''}>${s}</option>`)).join('');
-  showModal(`<div class="modal-h"><h2>${esc(player(pid)?.name||'Sizes')}</h2><p class="muted" style="margin:4px 0 0">Used for the trip apparel order — pick your best fit for each.</p></div>
+  showModal(`<div class="modal-h"><h2>${esc(player(pid)?.name||'Sizes')}</h2><p class="muted" style="margin:4px 0 0">Used for the trip apparel order — pick your best fit for each.${sz.carried?` <b style="color:#b45309">Pre-filled from ${sz.from} — saving confirms them.</b>`:''}</p></div>
     <div class="modal-b">
       <div class="field"><label>T-shirt</label><select id="szTshirt">${opts(sz.tshirt)}</select></div>
       <div class="field"><label>Polo</label><select id="szPolo">${opts(sz.polo)}</select></div>
       <div class="field"><label>Quarter-zip</label><select id="szQz">${opts(sz.quarterzip)}</select></div>
-      <button class="btn gold" onclick="saveSizes('${pid}')">Save</button>
+      <button class="btn gold" onclick="saveSizes('${pid}')">${sz.carried?'Save & confirm':'Save'}</button>
       <button class="btn ghost" style="margin-top:8px" onclick="${State.adminAuthed?'renderSizesAdmin()':'closeModal();render()'}">Cancel</button>
     </div>`);
 }
-async function saveSizes(pid){
-  const rec={ tshirt:$('#szTshirt').value||'', polo:$('#szPolo').value||'', quarterzip:$('#szQz').value||'' };
+function writeSizes(pid,rec){
+  rec.confirmed=true;
   State.sizes[pid]=rec;
   Store.set('sizes:'+pid, rec);
   markRecentWrite('sizes:'+pid);
+}
+async function saveSizes(pid){
+  writeSizes(pid,{ tshirt:$('#szTshirt').value||'', polo:$('#szPolo').value||'', quarterzip:$('#szQz').value||'' });
   if(State.adminAuthed){ renderSizesAdmin(); } else { closeModal(); render(); }
+}
+function confirmSizes(pid){
+  const sz=sizeOf(pid);
+  writeSizes(pid,{tshirt:sz.tshirt,polo:sz.polo,quarterzip:sz.quarterzip});
+  render();
 }
 function renderSizesAdmin(){
   const players=State.config.players||[];
@@ -3859,23 +3895,24 @@ function renderSizesAdmin(){
   const garments=[['tshirt','T-shirt'],['polo','Polo'],['quarterzip','Quarter-zip']];
   const sizeCounts=(list,key)=>{
     const counts={};
-    let set=0;
-    list.forEach(p=>{ const v=State.sizes[p.id]?.[key]; if(v){ counts[v]=(counts[v]||0)+1; set++; } });
+    let set=0, unc=0;
+    list.forEach(p=>{ const z=sizeOf(p.id), v=z[key]; if(v){ counts[v]=(counts[v]||0)+1; set++; if(!z.confirmed) unc++; } });
     const parts=APPAREL_SIZES.filter(s=>counts[s]).map(s=>`${s}×${counts[s]}`).join(', ')||'none yet';
-    return {parts,set};
+    return {parts,set,unc};
   };
   const rollup=garments.map(([key,label])=>{
     const all=sizeCounts(players,key);
     const byTeam=teams.map(t=>{
       const roster=teamRoster(t.id);
-      const {parts,set}=sizeCounts(roster,key);
-      return `<div style="margin:3px 0 3px 14px;font-size:12.5px"><span style="color:${esc(t.color||'inherit')}">●</span> ${esc(t.name)}: ${esc(parts)} <span class="muted">(${set} of ${roster.length} set)</span></div>`;
+      const {parts,set,unc}=sizeCounts(roster,key);
+      return `<div style="margin:3px 0 3px 14px;font-size:12.5px"><span style="color:${esc(t.color||'inherit')}">●</span> ${esc(t.name)}: ${esc(parts)} <span class="muted">(${set} of ${roster.length} set${unc?` · ${unc} unconfirmed`:''})</span></div>`;
     }).join('');
-    return `<div style="margin-bottom:10px"><b>${label} — total:</b> ${esc(all.parts)} <span class="muted">(${all.set} of ${players.length} set)</span>${byTeam}</div>`;
+    return `<div style="margin-bottom:10px"><b>${label} — total:</b> ${esc(all.parts)} <span class="muted">(${all.set} of ${players.length} set${all.unc?` · <span style="color:#b45309">${all.unc} unconfirmed</span>`:''})</span>${byTeam}</div>`;
   }).join('');
   const rows=players.map(p=>{
-    const sz=State.sizes[p.id]||{};
-    const line=[sz.tshirt&&`T ${sz.tshirt}`, sz.polo&&`P ${sz.polo}`, sz.quarterzip&&`QZ ${sz.quarterzip}`].filter(Boolean).join(' · ')||'not set';
+    const sz=sizeOf(p.id);
+    const has=sz.tshirt||sz.polo||sz.quarterzip;
+    const line=([sz.tshirt&&`T ${sz.tshirt}`, sz.polo&&`P ${sz.polo}`, sz.quarterzip&&`QZ ${sz.quarterzip}`].filter(Boolean).join(' · ')||'not set')+(has?(sz.confirmed?' · ✓ confirmed':' · ⚠ unconfirmed'+(sz.from?` (from ${sz.from})`:'')):'');
     return `<div class="roster-item" onclick="renderSizesEditor('${p.id}')" style="cursor:pointer">
       <div class="av">${avatarOf(p.id)}</div>
       <div class="info"><b>${esc(p.name)}</b><span>${esc(line)}</span></div>
@@ -3885,6 +3922,7 @@ function renderSizesAdmin(){
   showModal(`<div class="modal-h" style="display:flex;justify-content:space-between;align-items:center"><h2>Apparel Sizes</h2><button class="btn sm ghost" onclick="renderAdmin()">Back</button></div>
     <div class="modal-b">
       <div class="eyebrow" style="margin-bottom:8px">Order summary</div>
+      ${(()=>{ const n=players.filter(p=>{const z=sizeOf(p.id);return (z.tshirt||z.polo||z.quarterzip)&&!z.confirmed;}).length; return n?`<p class="muted" style="margin:0 0 10px;font-size:12.5px"><b style="color:#b45309">⚠ ${n} unconfirmed</b> — carried over from last year and included in the totals until each player confirms.</p>`:''; })()}
       <div style="margin-bottom:16px">${rollup}</div>
       <div class="eyebrow" style="margin-bottom:8px">Tap anyone to set or edit</div>
       ${rows}
